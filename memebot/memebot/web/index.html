@@ -145,32 +145,63 @@ td { padding: 10px 14px; border-top: 1px solid var(--line); white-space: nowrap;
 .crab-wrap { position: fixed; right: 24px; bottom: 16px; z-index: 9; display: flex; flex-direction: column;
   align-items: flex-end; pointer-events: none; }
 .crab-bubble { pointer-events: auto; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px;
-  padding: 7px 10px; font-size: 12px; max-width: 220px; margin-bottom: 6px; position: relative; }
+  padding: 7px 10px; font-size: 12px; max-width: 240px; margin-bottom: 8px; position: relative; transition: transform .2s; }
+.crab-bubble.pop { animation: pop .35s ease-out; }
 .crab-bubble:after { content: ""; position: absolute; right: 30px; bottom: -6px; width: 10px; height: 10px;
   background: var(--panel2); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); transform: rotate(45deg); }
 .crab-bubble.hide { display: none; }
-.crab { width: 76px; pointer-events: auto; cursor: pointer; animation: crab-walk 7s ease-in-out infinite; }
-.crab svg { display: block; width: 100%; image-rendering: pixelated; animation: crab-bob .5s ease-in-out infinite alternate; }
-.crab .claw-l { transform-origin: 3px 6px; animation: claw-l .5s ease-in-out infinite alternate; }
-.crab .claw-r { transform-origin: 13px 6px; animation: claw-r .5s ease-in-out infinite alternate; }
-.crab .legs-a { animation: legs 0.25s steps(1) infinite; }
-.crab .legs-b { animation: legs 0.25s steps(1) infinite reverse; }
-.crab .tear { display: none; }
-.crab.happy { animation-duration: 3s; }
-.crab.happy svg { animation-duration: .25s; }
-.crab.happy .claw-l, .crab.happy .claw-r { animation-duration: .2s; }
-.crab.sad { animation: none; }
-.crab.sad svg { animation: crab-sway 2s ease-in-out infinite alternate; }
-.crab.sad .claw-l, .crab.sad .claw-r, .crab.sad .legs-a, .crab.sad .legs-b { animation: none; }
+.crab { width: 80px; pointer-events: auto; cursor: pointer; animation: crab-walk 9s ease-in-out infinite; }
+.crab-body { transform-origin: 50% 100%; }
+.crab svg { display: block; width: 100%; image-rendering: pixelated; animation: crab-bob .45s ease-in-out infinite alternate; }
+.crab .claw-l { transform-origin: 3px 6px; animation: claw-l .45s ease-in-out infinite alternate; }
+.crab .claw-r { transform-origin: 13px 6px; animation: claw-r .45s ease-in-out infinite alternate; }
+.crab .legs-a { animation: legs .3s steps(1) infinite; }
+.crab .legs-b { animation: legs .3s steps(1) infinite reverse; }
+.crab .tear, .crab .m-happy, .crab .m-sad, .crab .blush { display: none; }
+.crab .eye-l, .crab .eye-r { animation: blink 4s infinite; transform-origin: center; transform-box: fill-box; }
+/* contento: baila */
+.crab.happy { animation: crab-walk 4s ease-in-out infinite; }
+.crab.happy .crab-body { animation: dance 1.2s ease-in-out infinite; }
+.crab.happy svg { animation-duration: .22s; }
+.crab.happy .claw-l, .crab.happy .claw-r { animation-duration: .18s; }
+.crab.happy .m-happy, .crab.happy .blush { display: block; }
+.crab.happy .m-flat { display: none; }
+/* triste: camina lento, cabizbajo, con lagrimita */
+.crab.sad { animation: crab-walk 18s ease-in-out infinite; }
+.crab.sad .crab-body { animation: sad-sway 2.4s ease-in-out infinite alternate; }
+.crab.sad svg { animation-duration: 1.2s; }
+.crab.sad .claw-l, .crab.sad .claw-r { animation: claws-down 2.4s ease-in-out infinite alternate; }
+.crab.sad .m-sad { display: block; } .crab.sad .m-flat { display: none; }
 .crab.sad .tear { display: block; animation: tear 1.6s linear infinite; }
-@keyframes crab-walk { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(-90px); } }
+/* celebracion por operacion ganadora: brinca y gira */
+.crab .crab-body.jump { animation: jump 2.4s ease-out !important; }
+.crab-body.jump .m-happy, .crab-body.jump .blush { display: block !important; }
+.crab-body.jump .m-flat, .crab-body.jump .m-sad, .crab-body.jump .tear { display: none !important; }
+.crab-body.snap .claw-l, .crab-body.snap .claw-r { animation-duration: .1s !important; }
+@keyframes crab-walk { 0%, 100% { transform: translateX(0) scaleX(1); } 45% { transform: translateX(-140px) scaleX(1); }
+  50% { transform: translateX(-140px) scaleX(-1); } 95% { transform: translateX(0) scaleX(-1); } }
 @keyframes crab-bob { from { transform: translateY(0); } to { transform: translateY(-4px); } }
-@keyframes crab-sway { from { transform: rotate(-4deg); } to { transform: rotate(4deg); } }
+@keyframes dance { 0%, 100% { transform: rotate(0) translateY(0); } 25% { transform: rotate(-10deg) translateY(-6px); }
+  50% { transform: rotate(0) translateY(0); } 75% { transform: rotate(10deg) translateY(-6px); } }
+@keyframes sad-sway { from { transform: rotate(-3deg) translateY(2px); } to { transform: rotate(3deg) translateY(2px); } }
+@keyframes jump { 0% { transform: translateY(0) scale(1, 1); } 8% { transform: translateY(0) scale(1.15, .8); }
+  20% { transform: translateY(-70px) scale(.9, 1.1) rotate(0); } 35% { transform: translateY(-70px) rotate(360deg); }
+  48% { transform: translateY(0) scale(1.15, .85) rotate(360deg); } 58% { transform: translateY(-35px) rotate(360deg); }
+  70% { transform: translateY(0) scale(1.1, .9) rotate(360deg); } 80% { transform: translateY(-14px) rotate(360deg); }
+  100% { transform: translateY(0) scale(1, 1) rotate(360deg); } }
 @keyframes claw-l { from { transform: rotate(0); } to { transform: rotate(-22deg); } }
 @keyframes claw-r { from { transform: rotate(0); } to { transform: rotate(22deg); } }
+@keyframes claws-down { from { transform: rotate(15deg); } to { transform: rotate(25deg); } }
 @keyframes legs { 0% { transform: translateY(0); } 50% { transform: translateY(-1px); } }
-@keyframes tear { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(5px); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .crab, .crab * { animation: none !important; } }
+@keyframes tear { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(6px); opacity: 0; } }
+@keyframes blink { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(.1); } }
+@keyframes pop { 0% { transform: scale(.6); } 70% { transform: scale(1.08); } 100% { transform: scale(1); } }
+.confetti { position: fixed; width: 8px; height: 12px; z-index: 30; pointer-events: none; border-radius: 2px;
+  animation: confetti-fall var(--d) cubic-bezier(.2,.6,.4,1) forwards; }
+@keyframes confetti-fall { 0% { transform: translate(0, 0) rotate(0); opacity: 1; }
+  100% { transform: translate(var(--x), var(--y)) rotate(var(--r)); opacity: 0; } }
+.money { position: fixed; z-index: 30; pointer-events: none; font-size: 22px; animation: money-up 1.8s ease-out forwards; }
+@keyframes money-up { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-160px); opacity: 0; } }
 </style>
 </head>
 <body>
@@ -272,18 +303,23 @@ td { padding: 10px 14px; border-top: 1px solid var(--line); white-space: nowrap;
 <div class="crab-wrap">
   <div class="crab-bubble" id="crab-bubble">¡Hola! Estoy cuidando tus monedas 🦀</div>
   <div class="crab" id="crab" title="Clic para hablar">
+   <div class="crab-body" id="crab-body">
     <svg viewBox="0 0 16 12" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg">
       <g fill="#ff6b3d">
-        <!-- ojos -->
         <rect x="5" y="1" width="1" height="2"/><rect x="10" y="1" width="1" height="2"/>
-        <!-- cuerpo -->
         <rect x="4" y="3" width="8" height="1"/><rect x="3" y="4" width="10" height="4"/>
         <rect x="4" y="8" width="8" height="1"/>
       </g>
-      <g fill="#fff"><rect x="4" y="0" width="2" height="2"/><rect x="10" y="0" width="2" height="2"/></g>
-      <g fill="#111"><rect x="5" y="1" width="1" height="1"/><rect x="10" y="1" width="1" height="1"/>
-        <rect x="6" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/>
-        <rect x="7" y="7" width="2" height="1"/></g>
+      <g class="eye-l"><rect x="4" y="0" width="2" height="2" fill="#fff"/><rect x="5" y="1" width="1" height="1" fill="#111"/></g>
+      <g class="eye-r"><rect x="10" y="0" width="2" height="2" fill="#fff"/><rect x="10" y="1" width="1" height="1" fill="#111"/></g>
+      <g fill="#111">
+        <g class="m-flat"><rect x="6" y="6" width="4" height="1"/></g>
+        <g class="m-happy"><rect x="5" y="5" width="1" height="1"/><rect x="10" y="5" width="1" height="1"/>
+          <rect x="6" y="6" width="4" height="1"/><rect x="7" y="7" width="2" height="1" fill="#ff9aa2"/></g>
+        <g class="m-sad"><rect x="7" y="6" width="2" height="1"/><rect x="6" y="7" width="1" height="1"/>
+          <rect x="9" y="7" width="1" height="1"/></g>
+      </g>
+      <g class="blush" fill="#ffb3a0"><rect x="3" y="5" width="1" height="1"/><rect x="12" y="5" width="1" height="1"/></g>
       <rect class="tear" x="4" y="2" width="1" height="1" fill="#6cc4ff"/>
       <g class="claw-l" fill="#ff6b3d">
         <rect x="2" y="5" width="1" height="2"/><rect x="1" y="4" width="1" height="2"/>
@@ -300,6 +336,7 @@ td { padding: 10px 14px; border-top: 1px solid var(--line); white-space: nowrap;
           <rect x="8" y="9" width="1" height="2"/></g>
       </g>
     </svg>
+   </div>
   </div>
 </div>
 
@@ -661,34 +698,110 @@ document.addEventListener("change", async e => {
 setView(view);
 
 // ---------- cangrejito ----------
-let crabMsgAt = 0, crabMsg = "";
-const CRAB_TIPS = [
-  "Recuerda: está en simulación, no se gasta dinero real 😉",
-  "Clic en una moneda para ver su gráfica en vivo 📈",
-  "Las meme coins suben y bajan feo, paciencia 🧘",
-  "El bot vende solo: stop loss, take profit y trailing 💪",
-  "Nunca compartas tu clave privada, ni conmigo 🔐",
-];
+let crabMsgAt = 0, crabSeen = null;
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const CRAB = {
+  tips: [
+    "Recuerda: está en simulación, no se gasta dinero real 😉",
+    "Clic en una moneda para ver su gráfica en vivo 📈",
+    "Las meme coins suben y bajan feo, paciencia 🧘",
+    "El bot vende solo: stop loss, take profit y trailing 💪",
+    "Nunca compartas tu clave privada, ni conmigo 🔐",
+    "Checa la tabla de resultados por etapa en Cerradas 📊",
+  ],
+  happy: [
+    "¡Vamos ganando {pnl}! 🚀", "¡Eso, güey! Vamos {pnl} 🤑", "¡A la luna! {pnl} 🌕",
+    "Esto va bien, {pnl} y contando 💃", "{best} va {x}, ¡que siga! 🔥",
+  ],
+  sad: [
+    "Vamos {pnl}… ni pedo, se puede más 💪", "Chale, vamos {pnl}, pero esto apenas empieza 🦀",
+    "Día rojo {pnl}, aguanta: el stop loss nos cuida 😬", "Se aprende de cada trade, la que sigue es la buena 🙏",
+    "Tranqui, {pnl} no es el final. Paciencia y datos 📊",
+  ],
+  idle: [
+    "Buscando buenas monedas… llevo {seen} vistas 🔎", "Vigilando el radar 👀", "Esperando un buen runner… 🎣",
+    "Ninguna me convence todavía, mejor esperar que comprar basura 🗑️",
+  ],
+  win: ["¡ESOOO! {sym} cerró con {pnl} 🎉🎉", "¡Profit! {sym} nos dejó {pnl} 💰", "¡Golazo con {sym}! {pnl} 🥳"],
+  loss: ["Chale, se fue {sym} ({pnl})… ni pedo, la que sigue 💪", "{sym} no jaló ({pnl}). Se puede más, a la otra 🦀",
+    "Perdimos {pnl} en {sym}, pero el stop nos salvó de algo peor 🛡️"],
+  buy: ["¡Compramos {sym}! Crucemos las tenazas 🤞", "Entramos a {sym}, a ver qué tal 👀", "{sym} en la bolsa, ¡vamos! 🚀"],
+  partial: ["¡Tomamos ganancia en {sym}! 💰", "Ya aseguramos una parte de {sym} 🔒💰"],
+};
+const fill = (t, d) => t.replace(/\{(\w+)\}/g, (_, k) => d[k] ?? "");
+
+function setCrab(msg, hold = 20000) {
+  crabMsgAt = Date.now() + hold - 20000;
+  const b = document.getElementById("crab-bubble");
+  b.textContent = msg; b.classList.remove("hide", "pop"); void b.offsetWidth; b.classList.add("pop");
+}
+function crabAct(kind) {
+  const body = document.getElementById("crab-body");
+  body.classList.remove("jump", "snap"); void body.offsetWidth;
+  body.classList.add(kind === "win" ? "jump" : "snap");
+  setTimeout(() => body.classList.remove("jump", "snap"), kind === "win" ? 2500 : 1500);
+  const r = document.getElementById("crab").getBoundingClientRect();
+  if (kind === "win") {
+    const colors = ["#2ebd85", "#a6f05a", "#f0b90b", "#ff6b3d", "#5b8def", "#ff9aa2"];
+    for (let i = 0; i < 60; i++) {
+      const c = document.createElement("div"); c.className = "confetti";
+      c.style.left = r.left + r.width / 2 + "px"; c.style.top = r.top + "px"; c.style.background = pick(colors);
+      c.style.setProperty("--x", (Math.random() * 600 - 400) + "px"); c.style.setProperty("--y", (Math.random() * -500 + 100) + "px");
+      c.style.setProperty("--r", Math.random() * 720 + "deg"); c.style.setProperty("--d", 1.2 + Math.random() * 1.2 + "s");
+      document.body.appendChild(c); setTimeout(() => c.remove(), 2600);
+    }
+  }
+  if (kind === "win" || kind === "partial") {
+    for (let i = 0; i < 6; i++) setTimeout(() => {
+      const m = document.createElement("div"); m.className = "money"; m.textContent = pick(["💰", "💵", "🤑", "💸"]);
+      m.style.left = r.left + Math.random() * r.width + "px"; m.style.top = r.top + "px";
+      document.body.appendChild(m); setTimeout(() => m.remove(), 1900);
+    }, i * 120);
+  }
+}
+
+function crabEvents() {
+  // detecta compras, ventas parciales y cierres nuevos desde la ultima actualizacion
+  const now = {open: new Set(S.open.map(p => p.mint)), lastClose: Math.max(0, ...S.closed.map(p => p.close_time)),
+    lastEvent: Math.max(0, ...S.events.map(e => e.t))};
+  if (!crabSeen) { crabSeen = now; return; }
+  const closed = S.closed.filter(p => p.close_time > crabSeen.lastClose);
+  for (const p of closed) {
+    const pnl = p.sol_received - p.sol_spent, d = {sym: p.symbol, pnl: psol(pnl, 4)};
+    if (pnl > 0) { setCrab(fill(pick(CRAB.win), d), 30000); crabAct("win"); }
+    else { setCrab(fill(pick(CRAB.loss), d), 30000); }
+  }
+  if (!closed.length) {
+    const bought = S.open.filter(p => !crabSeen.open.has(p.mint));
+    const partial = S.events.find(e => e.t > crabSeen.lastEvent && e.text.startsWith("💰"));
+    if (partial) {
+      const sym = (partial.text.match(/PARCIAL (\S+)/) || [])[1] || "";
+      setCrab(fill(pick(CRAB.partial), {sym}), 25000); crabAct("partial");
+    } else if (bought.length) {
+      setCrab(fill(pick(CRAB.buy), {sym: bought[0].symbol}), 25000); crabAct("buy");
+    }
+  }
+  crabSeen = now;
+}
+
 function crabMood() {
   if (!S) return;
+  crabEvents();
   const pnl = S.pnl_today_sol + S.upnl_sol, crab = document.getElementById("crab");
-  crab.className = "crab " + (pnl > 0.0001 ? "happy" : pnl < -0.0001 ? "sad" : "");
-  let msg;
-  if (S.open.length) {
-    const best = [...S.open].sort((a, b) => b.multiple - a.multiple)[0];
-    msg = pnl > 0.0001 ? `¡Vamos ganando ${psol(pnl, 3)}! ${best.symbol} va ${best.multiple.toFixed(2)}x 🚀`
-      : pnl < -0.0001 ? `Vamos ${psol(pnl, 3)}… aguanta, el bot cuida el stop loss 😬`
-      : `Vigilando ${S.open.length} posición(es) 👀`;
-  } else {
-    msg = pnl > 0.0001 ? `Hoy vamos ${psol(pnl, 3)} 🤑` : pnl < -0.0001 ? `Hoy vamos ${psol(pnl, 3)}, mañana se recupera 💪`
-      : `Buscando buenas monedas… llevo ${S.stats.seen} vistas 🔎`;
-  }
-  if (Date.now() - crabMsgAt > 20000) setCrab(msg);
+  const mood = pnl > 0.0001 ? "happy" : pnl < -0.0001 ? "sad" : "";
+  crab.className = "crab " + mood;
+  if (Date.now() - crabMsgAt < 20000) return;
+  const best = [...S.open].sort((a, b) => b.multiple - a.multiple)[0];
+  const d = {pnl: psol(pnl, 3), seen: S.stats.seen, best: best ? best.symbol : "", x: best ? best.multiple.toFixed(2) + "x" : ""};
+  let pool = mood === "happy" ? CRAB.happy : mood === "sad" ? CRAB.sad : CRAB.idle;
+  if (!best) pool = pool.filter(t => !t.includes("{best}"));
+  setCrab(fill(pick(pool), d));
 }
-function setCrab(msg) { crabMsg = msg; crabMsgAt = Date.now();
-  const b = document.getElementById("crab-bubble"); b.textContent = msg; b.classList.remove("hide"); }
 document.getElementById("crab").addEventListener("click", () => {
-  crabMsgAt = 0; setCrab(CRAB_TIPS[Math.floor(Math.random() * CRAB_TIPS.length)]); crabMsgAt = Date.now();
+  setCrab(pick(CRAB.tips), 25000);
+  const body = document.getElementById("crab-body");
+  body.classList.remove("jump"); void body.offsetWidth; body.classList.add("jump");
+  setTimeout(() => body.classList.remove("jump"), 2500);
 });
 document.getElementById("crab-bubble").addEventListener("click", e => e.currentTarget.classList.add("hide"));
 
