@@ -1,0 +1,72 @@
+{
+  "_nota": "Copia este archivo como config.json y ajustalo. Secretos (clave privada, RPC, Telegram) van en .env.",
+  "live": false,
+  "paper_starting_sol": 2.0,
+  "data_dir": "data",
+  "log_level": "INFO",
+  "sources": {
+    "pumpportal": true,
+    "pumpportal_migrations": true,
+    "dexscreener": true,
+    "gmgn": false,
+    "dexscreener_poll_seconds": 30,
+    "gmgn_poll_seconds": 60
+  },
+  "filters": {
+    "min_liquidity_usd": 8000,
+    "max_liquidity_usd": 2000000,
+    "min_market_cap_usd": 15000,
+    "max_market_cap_usd": 3000000,
+    "min_age_minutes": 3,
+    "max_age_minutes": 1440,
+    "min_volume_m5_usd": 2000,
+    "min_txns_m5": 25,
+    "min_buy_sell_ratio_m5": 1.15,
+    "max_price_change_h1_pct": 400,
+    "min_price_change_m5_pct": -5,
+    "min_score": 60,
+    "rugcheck": true,
+    "rugcheck_max_score_normalised": 30,
+    "rugcheck_reject_levels": [
+      "danger"
+    ],
+    "rugcheck_required": true,
+    "watch_minutes": 30,
+    "recheck_seconds": 20
+  },
+  "exits": {
+    "stop_loss_pct": 30,
+    "take_profit_ladder": [
+      [
+        2.0,
+        50.0
+      ],
+      [
+        4.0,
+        25.0
+      ]
+    ],
+    "trailing_activate_multiple": 1.5,
+    "trailing_stop_pct": 25,
+    "max_hold_minutes": 240,
+    "stale_minutes": 45,
+    "stale_min_gain_pct": 10,
+    "min_liquidity_usd_exit": 3000
+  },
+  "risk": {
+    "trade_size_sol": 0.1,
+    "max_open_positions": 3,
+    "max_daily_loss_sol": 0.5,
+    "min_sol_reserve": 0.05,
+    "cooldown_minutes_after_loss": 10,
+    "never_rebuy_same_token": true
+  },
+  "execution": {
+    "router": "jupiter",
+    "slippage_bps": 1500,
+    "priority_fee_sol": 0.0005,
+    "jupiter_base_url": "https://lite-api.jup.ag/swap/v1",
+    "confirm_timeout_seconds": 60,
+    "price_poll_seconds": 5
+  }
+}
