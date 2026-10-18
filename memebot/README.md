@@ -85,6 +85,10 @@ Activa el entorno primero: en Windows `.\.venv\Scripts\Activate.ps1`; en Linux/m
 
 `Ctrl+C` detiene el bot. Las posiciones abiertas quedan guardadas en `data/` y el bot las retoma al reiniciar. Cada operación queda registrada en `data/trades_paper.csv` o `data/trades_live.csv`, y el log completo en `data/memebot.log`.
 
+## Actualizar
+
+Para bajar la versión más nueva sin perder tu configuración ni tu historial: en Windows corre `.\update.ps1`; en Linux/macOS, `./update.sh`.
+
 ## Pasar a dinero real
 
 1. Simula al menos unos días y revisa `python -m memebot report`. Si en simulación pierde, en real va a perder más, porque el slippage real es peor.
