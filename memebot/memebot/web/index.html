@@ -113,6 +113,34 @@ td { padding: 10px 14px; border-top: 1px solid var(--line); white-space: nowrap;
 .copy { cursor: pointer; color: var(--muted); font-size: 11px; }
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--panel2);
   border: 1px solid var(--line); padding: 10px 16px; border-radius: 8px; display: none; z-index: 20; }
+/* trenches (columnas tipo GMGN) */
+.views { display: flex; gap: 4px; background: var(--panel2); padding: 3px; border-radius: 8px; }
+.views .chip { border: 0; font-size: 12px; padding: 5px 12px; }
+.trenches { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 12px; }
+@media (max-width: 1000px) { .trenches { grid-template-columns: 1fr; } }
+.tcol { display: flex; flex-direction: column; max-height: calc(100vh - 80px); }
+.tcol .card-head { border-bottom: 1px solid var(--line); gap: 8px; }
+.tcol h3 .n { color: var(--muted); font-weight: 500; margin-left: 4px; }
+.tlist { overflow-y: auto; flex: 1; }
+.trow2 { display: grid; grid-template-columns: 40px 1fr auto; gap: 10px; align-items: center; padding: 9px 12px;
+  border-bottom: 1px solid var(--line); cursor: pointer; }
+.trow2:hover { background: var(--panel2); }
+.trow2 .avatar { width: 40px; height: 40px; }
+.bar { height: 4px; background: var(--panel2); border-radius: 3px; overflow: hidden; margin-top: 5px; width: 120px; }
+.bar i { display: block; height: 100%; background: linear-gradient(90deg, #5b8def, var(--accent)); }
+.switch { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); cursor: pointer; user-select: none; }
+.switch input { display: none; }
+.switch .knob { width: 30px; height: 17px; border-radius: 9px; background: #33333d; position: relative; transition: .15s; }
+.switch .knob:after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%;
+  background: #aaa; transition: .15s; }
+.switch input:checked + .knob { background: var(--green); }
+.switch input:checked + .knob:after { left: 15px; background: #fff; }
+.stg { font-size: 10px; padding: 1px 5px; border-radius: 4px; background: var(--panel2); color: var(--muted); margin-left: 4px; }
+.stg.migrated { color: var(--accent); } .stg.about { color: var(--yellow); }
+.stage-stats { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.stage-stats table td, .stage-stats table th { padding: 6px 10px; }
+[hidden] { display: none !important; }
+
 /* cangrejito */
 .crab-wrap { position: fixed; right: 24px; bottom: 16px; z-index: 9; display: flex; flex-direction: column;
   align-items: flex-end; pointer-events: none; }
@@ -155,11 +183,27 @@ td { padding: 10px 14px; border-top: 1px solid var(--line); white-space: nowrap;
   <span class="hstat">Vistos <b id="seen">0</b></span>
   <span class="hstat">Compras <b id="bought">0</b></span>
   <span class="hstat">Rugs evitados <b id="rugs">0</b></span>
+  <div class="views">
+    <span class="chip on" data-view="portfolio">📊 Portafolio</span>
+    <span class="chip" data-view="trenches">⛏️ Trenches</span>
+  </div>
   <span class="spacer"></span>
   <span class="hstat" id="wallet"></span>
 </header>
 
-<div class="layout">
+<div class="trenches" id="view-trenches" hidden>
+  <section class="card tcol"><div class="card-head"><h3>🌱 Nuevas<span class="n" id="cnt-new"></span></h3>
+    <label class="switch" title="Permitir que el bot compre monedas en esta etapa"><input type="checkbox" data-stage="new"><span class="knob"></span>Comprar</label></div>
+    <div class="tlist" id="col-new"></div></section>
+  <section class="card tcol"><div class="card-head"><h3>🔥 A punto de migrar<span class="n" id="cnt-about"></span></h3>
+    <label class="switch" title="Permitir que el bot compre monedas en esta etapa"><input type="checkbox" data-stage="about"><span class="knob"></span>Comprar</label></div>
+    <div class="tlist" id="col-about"></div></section>
+  <section class="card tcol"><div class="card-head"><h3>🚀 Migradas<span class="n" id="cnt-migrated"></span></h3>
+    <label class="switch" title="Permitir que el bot compre monedas en esta etapa"><input type="checkbox" data-stage="migrated"><span class="knob"></span>Comprar</label></div>
+    <div class="tlist" id="col-migrated"></div></section>
+</div>
+
+<div class="layout" id="view-portfolio">
   <aside class="card radar">
     <div class="card-head">
       <h3>🔥 Radar</h3>
@@ -261,6 +305,9 @@ td { padding: 10px 14px; border-top: 1px solid var(--line); white-space: nowrap;
 
 <script>
 const TOKEN = "__API_TOKEN__";
+const STAGE = {new: "Nueva", about: "A punto", migrated: "Migrada"};
+const stg = s => s ? `<span class="stg ${esc(s)}">${esc(STAGE[s] || s)}</span>` : "";
+let view = "portfolio"; try { view = localStorage.getItem("view") || view; } catch (e) {}
 let S = null, tab = "open", radarFilter = "all", range = 604800, selected = null, chart = null, series = null;
 
 // ---------- formato ----------
@@ -333,7 +380,7 @@ function render() {
   setText("winrate", S.trades_closed ? `${Math.round(100 * S.wins / S.trades_closed)}% (${S.wins}/${S.trades_closed})` : "—");
   setText("n-open", S.open.length); setText("n-closed", S.trades_closed);
 
-  renderEquity(); renderCalendar(); renderRadar(); renderTab(); crabMood();
+  renderEquity(); renderCalendar(); renderRadar(); renderTab(); renderTrenches(); crabMood();
   if (selected) renderDetail(false);
 }
 function setText(id, v) { document.getElementById(id).textContent = v; }
@@ -394,7 +441,7 @@ function renderRadar() {
     const tagc = r.verdict === "BUY" ? "tag-buy" : r.verdict === "REJECT" ? "tag-rej" : "tag-wait";
     return `<div class="rrow" data-mint="${esc(r.mint)}">
       ${avatar(r.symbol, r.mint)}
-      <div style="min-width:0"><div class="sym">${esc(r.symbol)}</div>
+      <div style="min-width:0"><div class="sym">${esc(r.symbol)}${stg(r.stage)}</div>
         <div class="sub">${usd(r.mcap)} MC · ${dur(r.age_min * 60)} · ${r.buys_m5}/${r.sells_m5}</div></div>
       <div style="text-align:right"><div class="${cls(r.chg_m5)} mono">${pct(r.chg_m5)}</div>
         <span class="score ${tagc}" title="${esc(r.reasons.join(' · '))}">${r.score}</span></div>
@@ -421,7 +468,7 @@ function renderTab() {
     : "<th>Token</th><th>Comprado</th><th>Recibido</th><th>Ganancia</th><th>Máximo</th><th>Motivo</th><th>Duración</th>";
   const body = rows.map(p => {
     const tok = `<td><div class="tok">${avatar(p.symbol, p.mint)}<div><div class="sym">${esc(p.symbol)}</div>
-      <div class="sub">${esc(p.source)}</div></div></div></td>`;
+      <div class="sub">${stg(p.stage)} ${esc(p.source)}</div></div></div></td>`;
     if (tab === "open") {
       const up = p.total_pnl_sol / p.sol_spent * 100;
       return `<tr class="trow" data-mint="${esc(p.mint)}">${tok}
@@ -442,14 +489,25 @@ function renderTab() {
       <td class="muted">${esc(p.close_reason)}</td>
       <td class="mono">${dur(p.close_time - p.entry_time)}<div class="sub">${new Date(p.close_time * 1000).toLocaleString()}</div></td></tr>`;
   }).join("");
-  el.innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  let stats = "";
+  if (tab === "closed" && S.stage_stats.length) {
+    stats = `<div class="stage-stats"><h3 style="margin:0 0 6px">Resultados por etapa</h3><table>
+      <thead><tr><th>Etapa</th><th>Trades</th><th>Aciertos</th><th>PnL</th><th>Rendimiento</th><th>Mejor</th></tr></thead><tbody>` +
+      S.stage_stats.map(s => `<tr><td>${esc(s.label)}</td><td class="mono">${s.trades}</td>
+        <td class="mono">${Math.round(100 * s.wins / s.trades)}% (${s.wins}/${s.trades})</td>
+        <td class="mono ${cls(s.pnl_sol)}">${psol(s.pnl_sol)}</td><td class="mono ${cls(s.roi_pct)}">${pct(s.roi_pct)}</td>
+        <td class="mono">${s.best_x.toFixed(2)}x</td></tr>`).join("") + "</tbody></table></div>";
+  }
+  el.innerHTML = stats + `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
 // ---------- detalle de moneda (grafica en vivo) ----------
 function findToken(mint) {
   const pos = S.open.find(p => p.mint === mint), closed = S.closed.find(p => p.mint === mint);
-  const radar = S.radar.find(r => r.mint === mint);
-  return {pos, closed, radar, info: pos || closed || radar};
+  const all = [...S.radar, ...S.trenches.new, ...S.trenches.about, ...S.trenches.migrated];
+  const radar = all.find(r => r.mint === mint && r.score != null);
+  const trench = all.find(r => r.mint === mint);
+  return {pos, closed, radar, info: pos || closed || radar || trench};
 }
 function openDetail(mint) { selected = mint; renderDetail(true);
   document.getElementById("drawer").classList.add("on"); document.getElementById("overlay").classList.add("on"); }
@@ -503,6 +561,7 @@ function renderDetail(first) {
     side += `<h3 style="margin:16px 0 8px">Análisis del bot</h3>
       <div class="row"><span class="muted">Puntaje</span><b>${radar.score} / 100</b></div>
       <div class="row"><span class="muted">Veredicto</span><b>${radar.verdict === "BUY" ? "✅ Listo para comprar" : radar.verdict === "REJECT" ? "❌ Descartado" : "⏳ Esperando"}</b></div>
+      <div class="row"><span class="muted">Etapa</span><b>${esc(STAGE[radar.stage] || "—")}${radar.progress != null && radar.stage !== "migrated" ? " · curva " + Math.round(radar.progress * 100) + "%" : ""}</b></div>
       <div class="row"><span class="muted">Compras/ventas 5m</span><b class="mono">${radar.buys_m5} / ${radar.sells_m5}</b></div>
       <div class="row"><span class="muted">Volumen 5m</span><b class="mono">${usd(radar.vol_m5)}</b></div>
       <div class="row"><span class="muted">Edad</span><b class="mono">${dur(radar.age_min * 60)}</b></div>
@@ -535,6 +594,7 @@ function copy(t) { navigator.clipboard?.writeText(t); toast("Copiado"); }
 // ---------- eventos ----------
 document.addEventListener("click", e => {
   const cp = e.target.closest("[data-copy]"); if (cp) return copy(cp.dataset.copy);
+  const vw = e.target.closest("[data-view]"); if (vw) return setView(vw.dataset.view);
   const sl = e.target.closest("[data-sell]"); if (sl) return sellNow(sl.dataset.sell);
   if (e.target.closest("[data-close]")) return closeDetail();
   const row = e.target.closest("[data-mint]");
@@ -548,6 +608,57 @@ document.addEventListener("click", e => {
 });
 document.getElementById("overlay").onclick = closeDetail;
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeDetail(); });
+
+// ---------- trenches ----------
+function renderTrenches() {
+  for (const st of ["new", "about", "migrated"]) {
+    const rows = S.trenches[st] || [];
+    setText("cnt-" + st, rows.length);
+    const box = document.querySelector(`input[data-stage="${st}"]`);
+    if (box && !box._busy) box.checked = S.buy_stages.includes(st);
+    const el = document.getElementById("col-" + st);
+    if (!rows.length) { el.innerHTML = '<div class="empty">Esperando monedas…</div>'; continue; }
+    el.innerHTML = rows.map(r => {
+      const prog = r.progress == null ? null : Math.round(r.progress * 100);
+      const right = r.score != null
+        ? `<div class="${cls(r.chg_m5)} mono">${pct(r.chg_m5)}</div>
+           <span class="score ${r.verdict === "BUY" ? "tag-buy" : r.verdict === "REJECT" ? "tag-rej" : "tag-wait"}"
+             title="${esc((r.reasons || []).join(" · "))}">${r.score}</span>`
+        : `<span class="sub">sin datos aún</span>`;
+      const meta = r.score != null
+        ? `${usd(r.mcap)} MC · ${r.liq == null ? "curva" : usd(r.liq) + " liq"} · ${r.buys_m5}/${r.sells_m5}`
+        : `${r.mcap ? usd(r.mcap) + " MC · " : ""}recién detectada`;
+      const age = r.age_min != null ? dur(r.age_min * 60) : dur(S.now - r.t);
+      return `<div class="trow2" data-mint="${esc(r.mint)}">${avatar(r.symbol, r.mint)}
+        <div style="min-width:0"><div class="sym">${esc(r.symbol || "?")} <span class="sub">${esc(age)}</span></div>
+          <div class="sub">${meta}</div>
+          ${st !== "migrated" && prog != null ? `<div class="bar" title="Progreso de la curva ${prog}%"><i style="width:${prog}%"></i></div>` : ""}
+        </div>
+        <div style="text-align:right">${right}${st !== "migrated" && prog != null ? `<div class="sub">${prog}%</div>` : ""}</div>
+      </div>`;
+    }).join("");
+  }
+}
+function setView(v) {
+  view = v; try { localStorage.setItem("view", v); } catch (e) {}
+  document.getElementById("view-portfolio").hidden = v !== "portfolio";
+  document.getElementById("view-trenches").hidden = v !== "trenches";
+  document.querySelectorAll("[data-view]").forEach(x => x.classList.toggle("on", x.dataset.view === v));
+  if (v === "portfolio" && chart) chart.applyOptions({width: document.getElementById("equity").clientWidth});
+}
+document.addEventListener("change", async e => {
+  const box = e.target.closest("input[data-stage]"); if (!box) return;
+  const stages = [...document.querySelectorAll("input[data-stage]")].filter(b => b.checked).map(b => b.dataset.stage);
+  box._busy = true;
+  try {
+    const r = await fetch("/api/buy-stages", {method: "POST", headers: {"X-Token": TOKEN, "Content-Type": "application/json"},
+      body: JSON.stringify({stages})});
+    const j = await r.json();
+    toast(j.ok ? (stages.length ? "El bot comprará en: " + stages.map(s => STAGE[s]).join(", ") : "⏸️ El bot no comprará nada") : "⚠️ No se pudo guardar");
+  } catch (err) { toast("⚠️ No se pudo conectar con el bot"); }
+  box._busy = false; refresh();
+});
+setView(view);
 
 // ---------- cangrejito ----------
 let crabMsgAt = 0, crabMsg = "";

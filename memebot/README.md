@@ -67,6 +67,9 @@ Al arrancar, el bot abre solo tu navegador en **http://127.0.0.1:8080**. Si no s
 - **Radar**: las monedas que el bot está analizando ahora mismo, con su puntaje.
 - **Clic en cualquier moneda**: abre su **gráfica en tiempo real** (velas y operaciones en vivo de DexScreener), tu posición, el análisis del bot, un botón **"Vender todo ahora"** y links a GMGN, pump.fun, DexScreener y RugCheck.
 
+- **Trenches** (botón arriba): tres columnas como en GMGN: **Nuevas**, **A punto de migrar** (con la barra de progreso de la curva de pump.fun) y **Migradas**. Cada columna tiene un switch **Comprar** para decidir en qué etapas puede comprar el bot.
+- En **Cerradas** sale una tabla de **resultados por etapa**, para ver con números cuál etapa deja más.
+
 El panel solo se ve desde tu computadora: nadie de afuera puede entrar.
 
 ## Uso

@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 from aiohttp import web
 
 from .models import Position
+from .stages import STAGE_LABELS, STAGES
 from .trader import LiveTrader
 
 if TYPE_CHECKING:
@@ -51,9 +52,57 @@ def _pos_dict(p: Position) -> dict[str, Any]:
         "entry_time": p.entry_time,
         "close_time": p.close_time,
         "close_reason": p.close_reason,
+        "stage": p.stage,
         "closed": p.closed,
         "signatures": [s for s in p.signatures if s and s != "paper"][-5:],
     }
+
+
+def stage_stats(closed: list[Position]) -> list[dict[str, Any]]:
+    """Resultados por etapa de compra: para saber si conviene mas nuevas, a punto o migradas."""
+    out = []
+    for stage in (*STAGES, ""):
+        ps = [p for p in closed if p.stage == stage]
+        if not ps:
+            continue
+        spent = sum(p.sol_spent for p in ps)
+        pnl = sum(p.realized_pnl_sol for p in ps)
+        out.append(
+            {
+                "stage": stage,
+                "label": STAGE_LABELS.get(stage, "Sin etapa (antes)"),
+                "trades": len(ps),
+                "wins": sum(1 for p in ps if p.realized_pnl_sol > 0),
+                "pnl_sol": pnl,
+                "roi_pct": 100 * pnl / spent if spent else 0.0,
+                "best_x": max((p.sol_received / p.sol_spent for p in ps if p.sol_spent), default=0),
+            }
+        )
+    return out
+
+
+def build_trenches(bot: Bot) -> dict[str, list[dict[str, Any]]]:
+    """Las tres columnas tipo GMGN. Mezcla eventos en vivo de pump.fun con los datos evaluados."""
+    cols: dict[str, dict[str, dict[str, Any]]] = {s: {} for s in STAGES}
+    for ev in bot.recent_new:
+        if ev["mint"] in bot.radar:
+            continue
+        mcap = ev.get("mcap_sol", 0) * bot.sol_usd if bot.sol_usd else None
+        cols["new"][ev["mint"]] = {**ev, "stage": "new", "mcap": mcap, "pending": True}
+    for ev in bot.recent_migrated:
+        if ev["mint"] not in bot.radar:
+            item = {**ev, "stage": "migrated", "progress": 1.0, "pending": True}
+            cols["migrated"][ev["mint"]] = item
+    for r in bot.radar.values():
+        cols[r.get("stage", "new")][r["mint"]] = r
+    out = {}
+    for stage, items in cols.items():
+        if stage == "about":
+            ordered = sorted(items.values(), key=lambda r: r.get("progress") or 0, reverse=True)
+        else:
+            ordered = sorted(items.values(), key=lambda r: r.get("t", 0), reverse=True)
+        out[stage] = ordered[:40]
+    return out
 
 
 def build_state(bot: Bot) -> dict[str, Any]:
@@ -97,6 +146,9 @@ def build_state(bot: Bot) -> dict[str, Any]:
         "daily": daily,
         "equity": equity,
         "radar": radar[:80],
+        "trenches": build_trenches(bot),
+        "stage_stats": stage_stats(closed_all),
+        "buy_stages": bot.state.buy_stages,
         "events": list(bot.notifier.events)[-80:][::-1],
         "stats": {
             **bot.stats,
@@ -136,10 +188,21 @@ def create_app(bot: Bot) -> web.Application:
         ok, msg = await bot.sell_now(req.match_info["mint"])
         return web.json_response({"ok": ok, "message": msg}, status=200 if ok else 400)
 
+    async def api_buy_stages(req: web.Request) -> web.Response:
+        if req.headers.get("X-Token") != token:
+            return web.json_response({"ok": False, "error": "no autorizado"}, status=403)
+        body = await req.json()
+        stages = [s for s in body.get("stages", []) if s in STAGES]
+        bot.state.buy_stages = stages
+        bot.state.save()
+        log.info("Etapas de compra cambiadas desde el panel: %s", stages or "ninguna")
+        return web.json_response({"ok": True, "stages": stages})
+
     app = web.Application()
     app.router.add_get("/", index)
     app.router.add_get("/api/state", api_state)
     app.router.add_post("/api/sell/{mint}", api_sell)
+    app.router.add_post("/api/buy-stages", api_buy_stages)
     app.router.add_static("/static", WEB_DIR)
     return app
 

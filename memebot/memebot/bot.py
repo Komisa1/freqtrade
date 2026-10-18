@@ -19,6 +19,7 @@ from .scoring import Verdict, evaluate
 from .sources.dexscreener import DexScreener, poll_dexscreener
 from .sources.gmgn import poll_gmgn
 from .sources.pumpportal import stream_pumpportal
+from .stages import STAGE_LABELS, classify, progress_from_mcap_sol, progress_from_vsol
 from .state import State
 from .trader import LiveTrader, PaperTrader
 
@@ -60,6 +61,10 @@ class Bot:
             self.state.load_equity(time.time() - 30 * 86400), maxlen=100_000
         )
         self._selling: set[str] = set()
+        # columnas tipo GMGN: creaciones y migraciones recientes de pump.fun
+        self.recent_new: deque[dict] = deque(maxlen=60)
+        self.recent_migrated: deque[dict] = deque(maxlen=60)
+        self.migrated_mints: set[str] = set()
 
     # ------------------------------------------------------------------ run
 
@@ -127,6 +132,7 @@ class Bot:
         while True:
             cand = await self.queue.get()
             mint = cand.mint
+            self._track_stage_event(cand)
             if (
                 mint in self.watchlist
                 or mint in self.rejected
@@ -140,6 +146,31 @@ class Bot:
                 self.watchlist.pop(oldest.mint, None)
             self.watchlist[mint] = cand
             log.debug("Nuevo candidato %s %s (%s)", cand.symbol, mint, cand.source)
+
+    def _track_stage_event(self, cand: Candidate) -> None:
+        item = {"mint": cand.mint, "symbol": cand.symbol, "name": cand.name, "t": cand.first_seen}
+        if cand.source == "pumpfun-new":
+            mcap_sol = float(cand.extra.get("market_cap_sol") or 0)
+            vsol = float(cand.extra.get("vsol") or 0)
+            item["mcap_sol"] = mcap_sol
+            item["progress"] = (
+                progress_from_vsol(vsol) if vsol else progress_from_mcap_sol(mcap_sol)
+            )
+            self.recent_new.append(item)
+        elif cand.source == "pumpfun-graduated" and cand.mint not in self.migrated_mints:
+            self.migrated_mints.add(cand.mint)
+            self.recent_migrated.append(item)
+            if cand.mint in self.radar:
+                self.radar[cand.mint]["stage"] = "migrated"
+
+    def stage_of(self, snap: TokenSnapshot, source: str) -> tuple[str, float | None]:
+        progress = None
+        if snap.dex_id == "pumpfun" and self.sol_usd > 0:
+            progress = progress_from_mcap_sol(snap.market_cap_usd / self.sol_usd)
+        stage = classify(snap.dex_id, source, progress, snap.mint in self.migrated_mints)
+        if stage == "migrated":
+            progress = 1.0
+        return stage, progress
 
     # ------------------------------------------------------------- evaluate
 
@@ -170,13 +201,18 @@ class Bot:
                     self.watchlist.pop(mint, None)
                     self.rejected.add(mint)
                 elif ev.verdict is Verdict.BUY:
-                    ranked.append((ev.score, cand, snap))
+                    stage = self.radar[mint]["stage"]
+                    if stage in self.state.buy_stages:
+                        ranked.append((ev.score, cand, snap, stage))
             ranked.sort(key=lambda r: r[0], reverse=True)
-            for score, cand, snap in ranked:
-                await self._try_buy(cand, snap, score)
+            for score, cand, snap, stage in ranked:
+                await self._try_buy(cand, snap, score, stage)
 
     def _update_radar(self, cand, snap, score, verdict, reasons, now) -> None:
+        stage, progress = self.stage_of(snap, cand.source)
         self.radar[cand.mint] = {
+            "stage": stage,
+            "progress": progress,
             "mint": cand.mint,
             "symbol": snap.symbol or cand.symbol,
             "name": snap.name or cand.name,
@@ -202,7 +238,9 @@ class Bot:
             for old in by_age[: len(self.radar) - MAX_RADAR]:
                 self.radar.pop(old["mint"], None)
 
-    async def _try_buy(self, cand: Candidate, snap: TokenSnapshot, score: float) -> None:
+    async def _try_buy(
+        self, cand: Candidate, snap: TokenSnapshot, score: float, stage: str = ""
+    ) -> None:
         wallet = await self.trader.wallet_sol()
         ok, why = risk.can_open(cand.mint, self.state, wallet, self.cfg.risk)
         if not ok:
@@ -239,6 +277,7 @@ class Bot:
             source=cand.source,
             last_price_usd=snap.price_usd,
             signatures=[fill.signature],
+            stage=stage,
         )
         self.state.open_position(pos)
         self.state.log_trade(
@@ -255,7 +294,8 @@ class Bot:
         await self.notifier.send(
             f"🟢 COMPRA {snap.symbol} | {fill.sol_amount:.4f} SOL | score {score} | "
             f"mcap ${snap.market_cap_usd:,.0f} | liq ${snap.liquidity_usd:,.0f} | "
-            f"fuente {cand.source}\n{snap.url or 'https://dexscreener.com/solana/' + cand.mint}"
+            f"etapa {STAGE_LABELS.get(stage, stage)} | fuente {cand.source}\n"
+            f"{snap.url or 'https://dexscreener.com/solana/' + cand.mint}"
         )
 
     # ------------------------------------------------------------ positions
