@@ -94,6 +94,14 @@ def _report(cfg, mode: str) -> None:
         )
         best = max(closed, key=lambda p: p.sol_received / p.sol_spent if p.sol_spent else 0)
         print(f"  Mejor: {best.symbol} {best.sol_received / best.sol_spent:.2f}x")
+        from .dashboard import stage_stats
+
+        print("  Por etapa:")
+        for s in stage_stats(closed):
+            print(
+                f"    {s['label']:<20} {s['trades']:>3} trades  aciertos {s['wins']}/{s['trades']}"
+                f"  PnL {s['pnl_sol']:+.4f} SOL ({s['roi_pct']:+.1f}%)  mejor {s['best_x']:.2f}x"
+            )
         print("  Ultimas 15:")
         for p in closed[-15:]:
             print(

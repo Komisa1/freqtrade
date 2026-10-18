@@ -41,6 +41,7 @@ def parse_message(msg: dict[str, Any]) -> Candidate | None:
             "dev": msg.get("traderPublicKey", ""),
             "dev_buy_sol": msg.get("solAmount", 0),
             "market_cap_sol": msg.get("marketCapSol", 0),
+            "vsol": msg.get("vSolInBondingCurve", 0),
         },
     )
 

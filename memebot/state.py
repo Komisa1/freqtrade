@@ -29,6 +29,8 @@ class State:
         self.traded_mints: set[str] = set()
         self.last_loss_time: float = 0.0
         self.paper_balance: float | None = None
+        # etapas en las que el bot tiene permitido comprar (se cambia desde el panel)
+        self.buy_stages: list[str] = ["new", "about", "migrated"]
         self._load()
 
     def _load(self) -> None:
@@ -40,6 +42,7 @@ class State:
         self.traded_mints = set(data.get("traded_mints", []))
         self.last_loss_time = data.get("last_loss_time", 0.0)
         self.paper_balance = data.get("paper_balance")
+        self.buy_stages = data.get("buy_stages", self.buy_stages)
 
     def save(self) -> None:
         data = {
@@ -48,6 +51,7 @@ class State:
             "traded_mints": sorted(self.traded_mints),
             "last_loss_time": self.last_loss_time,
             "paper_balance": self.paper_balance,
+            "buy_stages": self.buy_stages,
         }
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
