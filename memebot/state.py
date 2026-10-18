@@ -23,6 +23,7 @@ class State:
         self.dir.mkdir(parents=True, exist_ok=True)
         self.path = self.dir / f"state_{mode}.json"
         self.trades_path = self.dir / f"trades_{mode}.csv"
+        self.equity_path = self.dir / f"equity_{mode}.csv"
         self.positions: dict[str, Position] = {}
         self.closed: list[Position] = []
         self.traded_mints: set[str] = set()
@@ -70,6 +71,23 @@ class State:
     def realized_pnl_today(self, now: float | None = None) -> float:
         today = _day(now or time.time())
         return sum(p.realized_pnl_sol for p in self.closed if _day(p.close_time) == today)
+
+    def append_equity(self, point: tuple[float, float]) -> None:
+        with self.equity_path.open("a", encoding="utf-8") as f:
+            f.write(f"{point[0]:.0f},{point[1]:.6f}\n")
+
+    def load_equity(self, since: float = 0.0) -> list[tuple[float, float]]:
+        if not self.equity_path.exists():
+            return []
+        out = []
+        for line in self.equity_path.read_text(encoding="utf-8").splitlines():
+            try:
+                t, v = line.split(",")
+                if float(t) >= since:
+                    out.append((float(t), float(v)))
+            except ValueError:
+                continue
+        return out
 
     def log_trade(
         self,

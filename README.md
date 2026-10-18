@@ -56,6 +56,19 @@ cd freqtrade/memebot
 
 El instalador crea un entorno virtual (`.venv`), instala las dependencias y copia `config.example.json` → `config.json` y `.env.example` → `.env`.
 
+## Panel (la app)
+
+Al arrancar, el bot abre solo tu navegador en **http://127.0.0.1:8080**. Si no se abre, copia esa dirección en Chrome. Ahí ves:
+
+- **Total y saldo** en SOL y en dólares, con la **gráfica de ganancias/pérdidas** (24H / 7D / 30D).
+- **Calendario** con el PnL de cada día (verde = ganó, rojo = perdió).
+- **Posiciones abiertas**: cuánto metiste, cuánto vale ahora, ganancia o pérdida, multiplicador y tiempo.
+- **Cerradas**: historial con el resultado de cada operación y por qué vendió.
+- **Radar**: las monedas que el bot está analizando ahora mismo, con su puntaje.
+- **Clic en cualquier moneda**: abre su **gráfica en tiempo real** (velas y operaciones en vivo de DexScreener), tu posición, el análisis del bot, un botón **"Vender todo ahora"** y links a GMGN, pump.fun, DexScreener y RugCheck.
+
+El panel solo se ve desde tu computadora: nadie de afuera puede entrar.
+
 ## Uso
 
 Activa el entorno primero: en Windows `.\.venv\Scripts\Activate.ps1`; en Linux/macOS `source .venv/bin/activate`. En Windows también puedes arrancar con doble clic en `start.bat`.
@@ -71,6 +84,10 @@ Activa el entorno primero: en Windows `.\.venv\Scripts\Activate.ps1`; en Linux/m
 | `python -m memebot report --live` | Resultados reales |
 
 `Ctrl+C` detiene el bot. Las posiciones abiertas quedan guardadas en `data/` y el bot las retoma al reiniciar. Cada operación queda registrada en `data/trades_paper.csv` o `data/trades_live.csv`, y el log completo en `data/memebot.log`.
+
+## Actualizar
+
+Para bajar la versión más nueva sin perder tu configuración ni tu historial: en Windows corre `.\update.ps1`; en Linux/macOS, `./update.sh`.
 
 ## Pasar a dinero real
 

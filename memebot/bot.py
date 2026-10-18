@@ -5,13 +5,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections import deque
 
 import aiohttp
 
 from . import risk
 from .config import Config
-from .exits import decide_exit
-from .models import Candidate, Position, TokenSnapshot
+from .exits import ExitAction, decide_exit
+from .models import WSOL_MINT, Candidate, Position, TokenSnapshot
 from .notifier import Notifier
 from .safety import RugCheck
 from .scoring import Verdict, evaluate
@@ -26,6 +27,8 @@ log = logging.getLogger("memebot")
 MAX_WATCHLIST = 3000
 DUST_FRACTION = 0.01  # si queda menos del 1% de la posicion, se considera cerrada
 MAX_SELL_FAILURES = 5
+MAX_RADAR = 300
+EQUITY_EVERY_SECONDS = 30
 
 
 class Bot:
@@ -48,11 +51,21 @@ class Bot:
         self.rejected: set[str] = set()
         self.sell_failures: dict[str, int] = {}
         self.stats = {"seen": 0, "bought": 0, "rug_rejected": 0}
+        self.started_at = time.time()
+        self.sol_usd = 0.0
+        self.last_wallet_sol = 0.0
+        # ultima evaluacion de cada token vigilado (para el "radar" del panel)
+        self.radar: dict[str, dict] = {}
+        self.equity: deque[tuple[float, float]] = deque(
+            self.state.load_equity(time.time() - 30 * 86400), maxlen=100_000
+        )
+        self._selling: set[str] = set()
 
     # ------------------------------------------------------------------ run
 
     async def run(self) -> None:
         wallet = await self.trader.wallet_sol()
+        self.last_wallet_sol = wallet
         who = f" wallet {self.trader.pubkey}" if isinstance(self.trader, LiveTrader) else ""
         await self.notifier.send(
             f"memebot iniciado en modo {self.mode.upper()}{who} | saldo {wallet:.4f} SOL | "
@@ -64,7 +77,13 @@ class Bot:
             asyncio.create_task(self._evaluate_loop(), name="evaluate"),
             asyncio.create_task(self._positions_loop(), name="positions"),
             asyncio.create_task(self._status_loop(), name="status"),
+            asyncio.create_task(self._sol_price_loop(), name="sol-price"),
+            asyncio.create_task(self._equity_loop(), name="equity"),
         ]
+        if self.cfg.dashboard.enabled:
+            from .dashboard import start_dashboard
+
+            self._dashboard = await start_dashboard(self)
         if src.pumpportal or src.pumpportal_migrations:
             tasks.append(
                 asyncio.create_task(
@@ -146,6 +165,7 @@ class Bot:
                 if not cand:
                     continue
                 ev = evaluate(snap, f, now)
+                self._update_radar(cand, snap, ev.score, ev.verdict.value, ev.reasons, now)
                 if ev.verdict is Verdict.REJECT:
                     self.watchlist.pop(mint, None)
                     self.rejected.add(mint)
@@ -154,6 +174,33 @@ class Bot:
             ranked.sort(key=lambda r: r[0], reverse=True)
             for score, cand, snap in ranked:
                 await self._try_buy(cand, snap, score)
+
+    def _update_radar(self, cand, snap, score, verdict, reasons, now) -> None:
+        self.radar[cand.mint] = {
+            "mint": cand.mint,
+            "symbol": snap.symbol or cand.symbol,
+            "name": snap.name or cand.name,
+            "pair": snap.pair_address,
+            "dex": snap.dex_id,
+            "source": cand.source,
+            "score": score,
+            "verdict": verdict,
+            "reasons": reasons[:4],
+            "price": snap.price_usd,
+            "mcap": snap.market_cap_usd,
+            "liq": snap.liquidity_usd if snap.liquidity_known else None,
+            "vol_m5": snap.volume_m5,
+            "buys_m5": snap.buys_m5,
+            "sells_m5": snap.sells_m5,
+            "chg_m5": snap.change_m5,
+            "chg_h1": snap.change_h1,
+            "age_min": snap.age_minutes(now),
+            "t": now,
+        }
+        if len(self.radar) > MAX_RADAR:
+            by_age = sorted(self.radar.values(), key=lambda r: r["t"])
+            for old in by_age[: len(self.radar) - MAX_RADAR]:
+                self.radar.pop(old["mint"], None)
 
     async def _try_buy(self, cand: Candidate, snap: TokenSnapshot, score: float) -> None:
         wallet = await self.trader.wallet_sol()
@@ -229,12 +276,38 @@ class Bot:
                     liq = snap.liquidity_usd if snap.liquidity_known else None
                     await self.manage_position(pos, snap.price_usd, liq)
 
-    async def manage_position(self, pos: Position, price: float, liquidity: float | None) -> None:
+    async def manage_position(
+        self, pos: Position, price: float, liquidity: float | None, force_reason: str = ""
+    ) -> None:
+        if pos.mint in self._selling:  # ya hay una venta en curso para esta posicion
+            return
         pos.last_price_usd = price
         pos.peak_price_usd = max(pos.peak_price_usd, price)
-        action = decide_exit(pos, price, liquidity, time.time(), self.cfg.exits)
+        if force_reason:
+            action: ExitAction | None = ExitAction(1.0, force_reason)
+        else:
+            action = decide_exit(pos, price, liquidity, time.time(), self.cfg.exits)
         if not action:
             return
+        self._selling.add(pos.mint)
+        try:
+            await self._sell(pos, price, action)
+        finally:
+            self._selling.discard(pos.mint)
+
+    async def sell_now(self, mint: str) -> tuple[bool, str]:
+        """Venta manual desde el panel: vende todo al precio actual."""
+        pos = self.state.positions.get(mint)
+        if not pos:
+            return False, "no hay posicion abierta en ese token"
+        snap = await self.dex.snapshot(mint)
+        price = snap.price_usd if snap else pos.last_price_usd
+        await self.manage_position(pos, price, None, force_reason="venta manual")
+        if mint in self.state.positions:
+            return False, "la venta no se completo, revisa el log"
+        return True, "vendida"
+
+    async def _sell(self, pos: Position, price: float, action: ExitAction) -> None:
         amount = (
             pos.tokens_left
             if action.fraction_of_remaining >= 1
@@ -292,3 +365,32 @@ class Bot:
                     f"(max {p.multiple(p.peak_price_usd):.2f}x)"
                 )
             log.info("\n".join(lines))
+
+    # ------------------------------------------------- datos para el panel
+
+    async def _sol_price_loop(self) -> None:
+        while True:
+            try:
+                snap = await self.dex.snapshot(WSOL_MINT)
+                if snap and snap.price_usd > 0:
+                    self.sol_usd = snap.price_usd
+            except Exception:  # noqa: BLE001
+                log.debug("No se pudo obtener el precio de SOL", exc_info=True)
+            await asyncio.sleep(60)
+
+    def open_value_sol(self) -> float:
+        return sum(
+            p.unrealized_value_sol(p.last_price_usd or p.entry_price_usd)
+            for p in self.state.positions.values()
+        )
+
+    async def _equity_loop(self) -> None:
+        while True:
+            try:
+                wallet = await self.trader.wallet_sol()
+                self.last_wallet_sol = wallet
+                self.equity.append((time.time(), wallet + self.open_value_sol()))
+                self.state.append_equity(self.equity[-1])
+            except Exception:  # noqa: BLE001
+                log.debug("No se pudo registrar el equity", exc_info=True)
+            await asyncio.sleep(EQUITY_EVERY_SECONDS)

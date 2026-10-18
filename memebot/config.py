@@ -81,6 +81,13 @@ class ExecutionConfig:
 
 
 @dataclass
+class DashboardConfig:
+    enabled: bool = True  # panel web en http://127.0.0.1:<port>
+    port: int = 8080
+    open_browser: bool = True  # abrir el navegador al arrancar
+
+
+@dataclass
 class Config:
     live: bool = False  # False = modo simulacion (paper trading), no se gasta dinero real
     paper_starting_sol: float = 2.0
@@ -91,6 +98,7 @@ class Config:
     exits: ExitConfig = field(default_factory=ExitConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
+    dashboard: DashboardConfig = field(default_factory=DashboardConfig)
     # secretos (vienen del entorno / .env, nunca de config.json)
     private_key: str = field(default="", repr=False)
     rpc_url: str = "https://api.mainnet-beta.solana.com"
@@ -110,6 +118,7 @@ _SECTIONS = {
     "exits": ExitConfig,
     "risk": RiskConfig,
     "execution": ExecutionConfig,
+    "dashboard": DashboardConfig,
 }
 
 

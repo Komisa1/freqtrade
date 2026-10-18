@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>memebot</title>
+<link rel="icon" href="data:,">
+<script src="/static/lightweight-charts.js"></script>
+<style>
+:root {
+  --bg: #0b0b0e; --panel: #141418; --panel2: #1b1b21; --line: #26262e; --text: #e8e8ee;
+  --muted: #8b8b98; --green: #2ebd85; --green-bg: rgba(46,189,133,.14); --red: #f6465d;
+  --red-bg: rgba(246,70,93,.14); --accent: #a6f05a; --yellow: #f0b90b;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text);
+  font: 13px/1.4 -apple-system, "Segoe UI", Roboto, Inter, sans-serif; }
+a { color: inherit; }
+.mono { font-variant-numeric: tabular-nums; }
+.up { color: var(--green); } .down { color: var(--red); } .muted { color: var(--muted); }
+
+header { display: flex; align-items: center; gap: 16px; padding: 10px 16px;
+  border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+.logo { font-weight: 800; font-size: 17px; letter-spacing: .3px; }
+.logo span { color: var(--accent); }
+.badge { padding: 3px 9px; border-radius: 6px; font-weight: 700; font-size: 11px; }
+.badge.paper { background: rgba(240,185,11,.15); color: var(--yellow); }
+.badge.live { background: var(--red-bg); color: var(--red); }
+.hstat { color: var(--muted); font-size: 12px; } .hstat b { color: var(--text); font-weight: 600; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block;
+  margin-right: 6px; box-shadow: 0 0 8px var(--green); }
+.dot.off { background: var(--red); box-shadow: 0 0 8px var(--red); }
+.spacer { flex: 1; }
+
+.layout { display: grid; grid-template-columns: 300px 1fr; gap: 12px; padding: 12px; }
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .radar { max-height: 360px; } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.card h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.card-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; }
+
+.radar { display: flex; flex-direction: column; max-height: calc(100vh - 80px); position: sticky; top: 12px; }
+.radar-list { overflow-y: auto; flex: 1; }
+.rrow { display: grid; grid-template-columns: 34px 1fr auto; gap: 8px; align-items: center;
+  padding: 8px 12px; border-top: 1px solid var(--line); cursor: pointer; }
+.rrow:hover, .trow:hover { background: var(--panel2); }
+.avatar { width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center;
+  font-weight: 800; font-size: 13px; color: #111; }
+.sym { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
+.sub { color: var(--muted); font-size: 11px; }
+.score { font-weight: 700; padding: 1px 6px; border-radius: 5px; font-size: 11px; }
+.tag-buy { background: var(--green-bg); color: var(--green); }
+.tag-wait { background: var(--panel2); color: var(--muted); }
+.tag-rej { background: var(--red-bg); color: var(--red); }
+.filters { display: flex; gap: 4px; }
+.chip { background: var(--panel2); border: 1px solid var(--line); color: var(--muted); border-radius: 6px;
+  padding: 3px 8px; font-size: 11px; cursor: pointer; }
+.chip.on { color: var(--text); border-color: #444; background: #26262e; }
+
+.top { display: grid; grid-template-columns: 1.35fr 1fr; gap: 12px; }
+@media (max-width: 1200px) { .top { grid-template-columns: 1fr; } }
+.assets { padding: 14px; }
+.assets-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.big { font-size: 30px; font-weight: 800; }
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
+.kpi { background: var(--panel2); border-radius: 8px; padding: 8px 10px; }
+.kpi .v { font-weight: 700; font-size: 15px; margin-top: 2px; }
+#equity { height: 170px; margin-top: 10px; }
+.cal { padding: 14px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-top: 10px; }
+.cal-cell { height: 38px; border-radius: 6px; background: var(--panel2); font-size: 10px; padding: 3px 5px;
+  display: flex; flex-direction: column; justify-content: space-between; }
+.cal-cell .d { color: var(--muted); }
+.cal-cell .p { text-align: center; font-weight: 700; }
+.cal-head { color: var(--muted); font-size: 10px; text-align: center; }
+
+.tabs { display: flex; gap: 18px; padding: 0 14px; border-bottom: 1px solid var(--line); }
+.tab { padding: 12px 0; cursor: pointer; color: var(--muted); font-weight: 600; border-bottom: 2px solid transparent; }
+.tab.on { color: var(--text); border-color: var(--text); }
+.tab .n { font-size: 11px; color: var(--muted); margin-left: 4px; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; padding: 10px 14px; white-space: nowrap; }
+td { padding: 10px 14px; border-top: 1px solid var(--line); white-space: nowrap; }
+.trow { cursor: pointer; }
+.tok { display: flex; gap: 10px; align-items: center; }
+.empty { padding: 40px; text-align: center; color: var(--muted); }
+.table-wrap { overflow-x: auto; }
+.mult { font-weight: 700; padding: 2px 7px; border-radius: 6px; }
+.mult.up { background: var(--green-bg); } .mult.down { background: var(--red-bg); }
+.ev { padding: 9px 14px; border-top: 1px solid var(--line); white-space: pre-wrap; }
+.ev time { color: var(--muted); margin-right: 8px; font-size: 11px; }
+
+/* detalle de moneda */
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; z-index: 10; }
+.overlay.on { display: block; }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(1100px, 100vw); background: var(--bg);
+  border-left: 1px solid var(--line); z-index: 11; transform: translateX(100%); transition: transform .2s;
+  display: flex; flex-direction: column; }
+.drawer.on { transform: none; }
+.dhead { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.dhead .sym { font-size: 18px; max-width: 260px; }
+.dstat { font-size: 11px; color: var(--muted); } .dstat b { display: block; color: var(--text); font-size: 14px; }
+.dbody { display: grid; grid-template-columns: 1fr 300px; flex: 1; min-height: 0; }
+@media (max-width: 900px) { .dbody { grid-template-columns: 1fr; overflow-y: auto; } }
+.chart-frame { width: 100%; height: 100%; min-height: 480px; border: 0; background: #0b0b0e; }
+.side { border-left: 1px solid var(--line); padding: 14px; overflow-y: auto; }
+.side .row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.btn { border: 0; border-radius: 8px; padding: 11px 14px; font-weight: 700; cursor: pointer; width: 100%; font-size: 14px; }
+.btn.sell { background: var(--red); color: #fff; } .btn.sell:disabled { opacity: .5; cursor: wait; }
+.links { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 12px; }
+.links a { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; text-align: center;
+  text-decoration: none; font-size: 12px; }
+.x { background: none; border: 0; color: var(--muted); font-size: 22px; cursor: pointer; }
+.copy { cursor: pointer; color: var(--muted); font-size: 11px; }
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--panel2);
+  border: 1px solid var(--line); padding: 10px 16px; border-radius: 8px; display: none; z-index: 20; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">meme<span>bot</span></div>
+  <span id="mode" class="badge paper">SIMULACIÓN</span>
+  <span class="hstat"><span id="dot" class="dot"></span><span id="conn">conectando…</span></span>
+  <span class="hstat">SOL <b id="solusd">—</b></span>
+  <span class="hstat">Vigilando <b id="watching">0</b></span>
+  <span class="hstat">Vistos <b id="seen">0</b></span>
+  <span class="hstat">Compras <b id="bought">0</b></span>
+  <span class="hstat">Rugs evitados <b id="rugs">0</b></span>
+  <span class="spacer"></span>
+  <span class="hstat" id="wallet"></span>
+</header>
+
+<div class="layout">
+  <aside class="card radar">
+    <div class="card-head">
+      <h3>🔥 Radar</h3>
+      <div class="filters">
+        <span class="chip on" data-rf="all">Todos</span>
+        <span class="chip" data-rf="BUY">Listos</span>
+        <span class="chip" data-rf="new">Nuevos</span>
+      </div>
+    </div>
+    <div class="radar-list" id="radar"><div class="empty">Buscando monedas…</div></div>
+  </aside>
+
+  <main style="display:flex;flex-direction:column;gap:12px;min-width:0">
+    <div class="top">
+      <section class="card assets">
+        <div class="assets-row">
+          <div>
+            <div class="muted">Total (saldo + posiciones)</div>
+            <div class="big mono" id="total">—</div>
+            <div class="mono" id="total-usd"></div>
+          </div>
+          <div style="text-align:right">
+            <div class="muted">Saldo disponible</div>
+            <div class="big mono" id="balance">—</div>
+            <div class="filters" style="justify-content:flex-end;margin-top:6px">
+              <span class="chip" data-range="86400">24H</span>
+              <span class="chip on" data-range="604800">7D</span>
+              <span class="chip" data-range="2592000">30D</span>
+            </div>
+          </div>
+        </div>
+        <div id="equity"></div>
+        <div class="kpis">
+          <div class="kpi"><div class="muted">PnL hoy</div><div class="v mono" id="pnl-today">—</div></div>
+          <div class="kpi"><div class="muted">PnL total</div><div class="v mono" id="pnl-total">—</div></div>
+          <div class="kpi"><div class="muted">No realizado</div><div class="v mono" id="upnl">—</div></div>
+          <div class="kpi"><div class="muted">Aciertos</div><div class="v mono" id="winrate">—</div></div>
+        </div>
+      </section>
+      <section class="card cal">
+        <h3 id="cal-title">Mes</h3>
+        <div class="cal-grid" id="cal"></div>
+      </section>
+    </div>
+
+    <section class="card">
+      <div class="tabs">
+        <div class="tab on" data-tab="open">Abiertas<span class="n" id="n-open"></span></div>
+        <div class="tab" data-tab="closed">Cerradas<span class="n" id="n-closed"></span></div>
+        <div class="tab" data-tab="events">Actividad</div>
+      </div>
+      <div id="tab-body" class="table-wrap"></div>
+    </section>
+  </main>
+</div>
+
+<div class="overlay" id="overlay"></div>
+<div class="drawer" id="drawer">
+  <div class="dhead" id="dhead"></div>
+  <div class="dbody">
+    <div id="chart-box"></div>
+    <div class="side" id="dside"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const TOKEN = "__API_TOKEN__";
+let S = null, tab = "open", radarFilter = "all", range = 604800, selected = null, chart = null, series = null;
+
+// ---------- formato ----------
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const sign = v => v > 0 ? "+" : "";
+const cls = v => v > 0 ? "up" : v < 0 ? "down" : "muted";
+const sol = (v, d = 4) => (v == null || isNaN(v)) ? "—" : `${(+v).toFixed(d)} SOL`;
+const psol = (v, d = 4) => (v == null || isNaN(v)) ? "—" : `${sign(v)}${(+v).toFixed(d)} SOL`;
+function usd(v) {
+  if (v == null || isNaN(v)) return "—";
+  const a = Math.abs(v);
+  if (a >= 1e9) return "$" + (v / 1e9).toFixed(2) + "B";
+  if (a >= 1e6) return "$" + (v / 1e6).toFixed(2) + "M";
+  if (a >= 1e3) return "$" + (v / 1e3).toFixed(1) + "K";
+  return "$" + v.toFixed(2);
+}
+function price(v) {  // estilo GMGN: $0.0₅4806
+  if (!v) return "—";
+  if (v >= 1) return "$" + v.toFixed(4);
+  const s = v.toFixed(20).split(".")[1]; const z = s.match(/^0*/)[0].length;
+  if (z < 4) return "$" + v.toFixed(z + 4);
+  const sub = String(z).split("").map(d => "₀₁₂₃₄₅₆₇₈₉"[d]).join("");
+  return "$0.0" + sub + s.slice(z, z + 4);
+}
+const pct = v => (v == null || isNaN(v)) ? "—" : `${sign(v)}${(+v).toFixed(1)}%`;
+function dur(sec) {
+  sec = Math.max(0, sec);
+  if (sec < 60) return Math.floor(sec) + "s";
+  if (sec < 3600) return Math.floor(sec / 60) + "m";
+  if (sec < 86400) return Math.floor(sec / 3600) + "h " + Math.floor(sec % 3600 / 60) + "m";
+  return Math.floor(sec / 86400) + "d " + Math.floor(sec % 86400 / 3600) + "h";
+}
+const toUsd = s => S && S.sol_usd ? usd(s * S.sol_usd) : "";
+function avatar(sym, mint) {
+  let h = 0; for (const c of (mint || sym || "x")) h = (h * 31 + c.charCodeAt(0)) % 360;
+  return `<div class="avatar" style="background:hsl(${h} 70% 62%)">${esc((sym || "?").slice(0, 2).toUpperCase())}</div>`;
+}
+function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.style.display = "block";
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", 3500); }
+
+// ---------- datos ----------
+async function refresh() {
+  try {
+    const r = await fetch("/api/state", {cache: "no-store"});
+    S = await r.json();
+    document.getElementById("dot").className = "dot";
+    document.getElementById("conn").textContent = "en vivo";
+    render();
+  } catch (e) {
+    document.getElementById("dot").className = "dot off";
+    document.getElementById("conn").textContent = "bot desconectado";
+  }
+}
+
+function render() {
+  const live = S.mode === "live";
+  const m = document.getElementById("mode");
+  m.textContent = live ? "DINERO REAL" : "SIMULACIÓN"; m.className = "badge " + (live ? "live" : "paper");
+  setText("solusd", S.sol_usd ? usd(S.sol_usd) : "—");
+  setText("watching", S.stats.watching); setText("seen", S.stats.seen);
+  setText("bought", S.stats.bought); setText("rugs", S.stats.rug_rejected);
+  document.getElementById("wallet").innerHTML = S.wallet
+    ? `Wallet <b class="copy" data-copy="${esc(S.wallet)}">${esc(S.wallet.slice(0, 4))}…${esc(S.wallet.slice(-4))}</b>` : "";
+
+  const total = S.balance_sol + S.open_value_sol;
+  setText("total", total.toFixed(4) + " SOL");
+  setText("total-usd", toUsd(total));
+  setText("balance", S.balance_sol.toFixed(4) + " SOL");
+  setVal("pnl-today", S.pnl_today_sol); setVal("pnl-total", S.pnl_total_sol); setVal("upnl", S.upnl_sol);
+  setText("winrate", S.trades_closed ? `${Math.round(100 * S.wins / S.trades_closed)}% (${S.wins}/${S.trades_closed})` : "—");
+  setText("n-open", S.open.length); setText("n-closed", S.trades_closed);
+
+  renderEquity(); renderCalendar(); renderRadar(); renderTab();
+  if (selected) renderDetail(false);
+}
+function setText(id, v) { document.getElementById(id).textContent = v; }
+function setVal(id, v) { const el = document.getElementById(id); el.textContent = psol(v);
+  el.className = "v mono " + cls(v); el.title = toUsd(v); }
+
+// ---------- grafica de equity ----------
+function renderEquity() {
+  const box = document.getElementById("equity");
+  if (!window.LightweightCharts) { box.innerHTML = '<div class="empty">No se pudo cargar la gráfica</div>'; return; }
+  if (!chart) {
+    chart = LightweightCharts.createChart(box, {
+      height: 170, layout: {background: {color: "transparent"}, textColor: "#8b8b98"},
+      grid: {vertLines: {visible: false}, horzLines: {color: "#1f1f26"}},
+      rightPriceScale: {borderVisible: false}, timeScale: {borderVisible: false, timeVisible: true},
+      crosshair: {mode: 0}, handleScroll: false, handleScale: false,
+      localization: {priceFormatter: p => p.toFixed(3) + " SOL"},
+    });
+    series = chart.addAreaSeries({lineWidth: 2});
+    new ResizeObserver(() => chart.applyOptions({width: box.clientWidth})).observe(box);
+  }
+  const since = S.now - range, seen = new Set(), tz = new Date().getTimezoneOffset() * 60;
+  const data = S.equity.filter(p => p[0] >= since).map(p => ({time: Math.floor(p[0]) - tz, value: p[1]}))
+    .filter(p => !seen.has(p.time) && seen.add(p.time));
+  const up = data.length < 2 || data[data.length - 1].value >= data[0].value;
+  series.applyOptions({lineColor: up ? "#2ebd85" : "#f6465d",
+    topColor: up ? "rgba(46,189,133,.35)" : "rgba(246,70,93,.35)", bottomColor: "rgba(0,0,0,0)"});
+  series.setData(data);
+  chart.timeScale().fitContent();
+}
+
+// ---------- calendario de PnL ----------
+function renderCalendar() {
+  const now = new Date(), y = now.getFullYear(), mo = now.getMonth();
+  const months = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  setText("cal-title", `PnL diario · ${months[mo]} ${y}`);
+  const first = (new Date(y, mo, 1).getDay() + 6) % 7, days = new Date(y, mo + 1, 0).getDate();
+  let h = ["L","M","M","J","V","S","D"].map(d => `<div class="cal-head">${d}</div>`).join("");
+  for (let i = 0; i < first; i++) h += "<div></div>";
+  for (let d = 1; d <= days; d++) {
+    const key = `${y}-${String(mo + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const v = S.daily[key];
+    const bg = v == null ? "" : v >= 0 ? "background:var(--green-bg)" : "background:var(--red-bg)";
+    h += `<div class="cal-cell" style="${bg}"><span class="d">${d}</span>` +
+      (v == null ? "" : `<span class="p ${cls(v)}">${sign(v)}${v.toFixed(3)}</span>`) + "</div>";
+  }
+  document.getElementById("cal").innerHTML = h;
+}
+
+// ---------- radar ----------
+function renderRadar() {
+  let rows = S.radar;
+  if (radarFilter === "BUY") rows = rows.filter(r => r.verdict === "BUY");
+  if (radarFilter === "new") rows = [...rows].sort((a, b) => a.age_min - b.age_min);
+  const el = document.getElementById("radar");
+  if (!rows.length) { el.innerHTML = '<div class="empty">Buscando monedas…<br><span class="sub">Aparecen aquí cuando el bot las evalúa</span></div>'; return; }
+  el.innerHTML = rows.map(r => {
+    const tagc = r.verdict === "BUY" ? "tag-buy" : r.verdict === "REJECT" ? "tag-rej" : "tag-wait";
+    return `<div class="rrow" data-mint="${esc(r.mint)}">
+      ${avatar(r.symbol, r.mint)}
+      <div style="min-width:0"><div class="sym">${esc(r.symbol)}</div>
+        <div class="sub">${usd(r.mcap)} MC · ${dur(r.age_min * 60)} · ${r.buys_m5}/${r.sells_m5}</div></div>
+      <div style="text-align:right"><div class="${cls(r.chg_m5)} mono">${pct(r.chg_m5)}</div>
+        <span class="score ${tagc}" title="${esc(r.reasons.join(' · '))}">${r.score}</span></div>
+    </div>`;
+  }).join("");
+}
+
+// ---------- tablas ----------
+function renderTab() {
+  const el = document.getElementById("tab-body");
+  if (tab === "events") {
+    el.innerHTML = S.events.length ? S.events.map(e =>
+      `<div class="ev"><time>${new Date(e.t * 1000).toLocaleTimeString()}</time>${esc(e.text)}</div>`).join("")
+      : '<div class="empty">Sin actividad todavía</div>';
+    return;
+  }
+  const rows = tab === "open" ? S.open : S.closed;
+  if (!rows.length) {
+    el.innerHTML = `<div class="empty">${tab === "open" ? "Sin posiciones abiertas. El bot compra cuando encuentra una buena." : "Todavía no hay operaciones cerradas."}</div>`;
+    return;
+  }
+  const head = tab === "open"
+    ? "<th>Token</th><th>Comprado</th><th>Vendido</th><th>Valor actual</th><th>PnL no realizado</th><th>Ganancia total</th><th>Precio</th><th>Tiempo</th>"
+    : "<th>Token</th><th>Comprado</th><th>Recibido</th><th>Ganancia</th><th>Máximo</th><th>Motivo</th><th>Duración</th>";
+  const body = rows.map(p => {
+    const tok = `<td><div class="tok">${avatar(p.symbol, p.mint)}<div><div class="sym">${esc(p.symbol)}</div>
+      <div class="sub">${esc(p.source)}</div></div></div></td>`;
+    if (tab === "open") {
+      const up = p.total_pnl_sol / p.sol_spent * 100;
+      return `<tr class="trow" data-mint="${esc(p.mint)}">${tok}
+        <td class="mono">${sol(p.sol_spent)}</td>
+        <td class="mono">${sol(p.sol_received)}</td>
+        <td class="mono">${sol(p.value_sol)}<div class="sub">${toUsd(p.value_sol)}</div></td>
+        <td class="mono ${cls(p.upnl_sol)}">${psol(p.upnl_sol)}</td>
+        <td class="mono ${cls(p.total_pnl_sol)}">${psol(p.total_pnl_sol)} <span class="mult ${cls(up)}">${pct(up)}</span></td>
+        <td class="mono">${price(p.price)}<div class="sub">${p.multiple.toFixed(2)}x · máx ${p.peak_multiple.toFixed(2)}x</div></td>
+        <td class="mono">${dur(S.now - p.entry_time)}</td></tr>`;
+    }
+    const pnl = p.sol_received - p.sol_spent, x = p.sol_received / p.sol_spent;
+    return `<tr class="trow" data-mint="${esc(p.mint)}">${tok}
+      <td class="mono">${sol(p.sol_spent)}</td>
+      <td class="mono">${sol(p.sol_received)}</td>
+      <td class="mono ${cls(pnl)}">${psol(pnl)} <span class="mult ${cls(pnl)}">${x.toFixed(2)}x</span></td>
+      <td class="mono">${p.peak_multiple.toFixed(2)}x</td>
+      <td class="muted">${esc(p.close_reason)}</td>
+      <td class="mono">${dur(p.close_time - p.entry_time)}<div class="sub">${new Date(p.close_time * 1000).toLocaleString()}</div></td></tr>`;
+  }).join("");
+  el.innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+// ---------- detalle de moneda (grafica en vivo) ----------
+function findToken(mint) {
+  const pos = S.open.find(p => p.mint === mint), closed = S.closed.find(p => p.mint === mint);
+  const radar = S.radar.find(r => r.mint === mint);
+  return {pos, closed, radar, info: pos || closed || radar};
+}
+function openDetail(mint) { selected = mint; renderDetail(true);
+  document.getElementById("drawer").classList.add("on"); document.getElementById("overlay").classList.add("on"); }
+function closeDetail() { selected = null; document.getElementById("chart-box").innerHTML = "";
+  document.getElementById("drawer").classList.remove("on"); document.getElementById("overlay").classList.remove("on"); }
+
+function renderDetail(first) {
+  const {pos, closed, radar, info} = findToken(selected);
+  if (!info) return;
+  const mint = selected, sym = info.symbol;
+  if (first) {
+    // grafica de velas en tiempo real de DexScreener (con operaciones en vivo)
+    const target = encodeURIComponent(info.pair || mint);
+    document.getElementById("chart-box").innerHTML =
+      `<iframe class="chart-frame" src="https://dexscreener.com/solana/${target}?embed=1&loadChartSettings=0&tabs=0&info=0&chartLeftToolbar=0&chartTheme=dark&theme=dark&chartStyle=1&chartType=usd&interval=1&trades=1"></iframe>`;
+  }
+  const p = pos || closed;
+  let stats = `<div>${avatar(sym, mint)}</div>
+    <div><div class="sym">${esc(sym)}</div><span class="copy" data-copy="${esc(mint)}">${esc(mint.slice(0, 6))}…${esc(mint.slice(-4))} ⧉</span></div>`;
+  if (radar) stats += `<div class="dstat">Market cap<b>${usd(radar.mcap)}</b></div>
+    <div class="dstat">Liquidez<b>${radar.liq == null ? "curva" : usd(radar.liq)}</b></div>
+    <div class="dstat">5m<b class="${cls(radar.chg_m5)}">${pct(radar.chg_m5)}</b></div>
+    <div class="dstat">1h<b class="${cls(radar.chg_h1)}">${pct(radar.chg_h1)}</b></div>`;
+  if (p) stats += `<div class="dstat">Precio<b>${price(p.price)}</b></div>
+    <div class="dstat">Tu ganancia<b class="${cls(p.total_pnl_sol)}">${psol(p.total_pnl_sol)}</b></div>`;
+  document.getElementById("dhead").innerHTML = stats + `<span class="spacer"></span><button class="x" data-close="1">✕</button>`;
+
+  let side = "";
+  if (pos) {
+    side += `<h3 style="margin:0 0 8px">Tu posición</h3>
+      <div class="row"><span class="muted">Invertido</span><b class="mono">${sol(pos.sol_spent)}</b></div>
+      <div class="row"><span class="muted">Valor actual</span><b class="mono">${sol(pos.value_sol)}</b></div>
+      <div class="row"><span class="muted">Ya vendido</span><b class="mono">${sol(pos.sol_received)} (${pos.sold_pct.toFixed(0)}%)</b></div>
+      <div class="row"><span class="muted">Ganancia total</span><b class="mono ${cls(pos.total_pnl_sol)}">${psol(pos.total_pnl_sol)}</b></div>
+      <div class="row"><span class="muted">Multiplicador</span><b class="mono ${cls(pos.multiple - 1)}">${pos.multiple.toFixed(2)}x</b></div>
+      <div class="row"><span class="muted">Máximo alcanzado</span><b class="mono">${pos.peak_multiple.toFixed(2)}x</b></div>
+      <div class="row"><span class="muted">Entrada</span><b class="mono">${price(pos.entry_price)}</b></div>
+      <div class="row"><span class="muted">Tiempo</span><b class="mono">${dur(S.now - pos.entry_time)}</b></div>
+      <div style="margin-top:14px"><button class="btn sell" id="sell-btn" data-sell="${esc(mint)}">Vender todo ahora</button></div>
+      <div class="sub" style="margin-top:6px">Stop −${S.settings.stop_loss_pct}% · Take profit ${S.settings.take_profit_ladder.map(s => s[0] + "x").join(", ")} · Trailing −${S.settings.trailing_stop_pct}%</div>`;
+  } else if (closed) {
+    const pnl = closed.sol_received - closed.sol_spent;
+    side += `<h3 style="margin:0 0 8px">Operación cerrada</h3>
+      <div class="row"><span class="muted">Invertido</span><b class="mono">${sol(closed.sol_spent)}</b></div>
+      <div class="row"><span class="muted">Recibido</span><b class="mono">${sol(closed.sol_received)}</b></div>
+      <div class="row"><span class="muted">Ganancia</span><b class="mono ${cls(pnl)}">${psol(pnl)}</b></div>
+      <div class="row"><span class="muted">Máximo</span><b class="mono">${closed.peak_multiple.toFixed(2)}x</b></div>
+      <div class="row"><span class="muted">Motivo</span><b>${esc(closed.close_reason)}</b></div>`;
+  }
+  if (radar) {
+    side += `<h3 style="margin:16px 0 8px">Análisis del bot</h3>
+      <div class="row"><span class="muted">Puntaje</span><b>${radar.score} / 100</b></div>
+      <div class="row"><span class="muted">Veredicto</span><b>${radar.verdict === "BUY" ? "✅ Listo para comprar" : radar.verdict === "REJECT" ? "❌ Descartado" : "⏳ Esperando"}</b></div>
+      <div class="row"><span class="muted">Compras/ventas 5m</span><b class="mono">${radar.buys_m5} / ${radar.sells_m5}</b></div>
+      <div class="row"><span class="muted">Volumen 5m</span><b class="mono">${usd(radar.vol_m5)}</b></div>
+      <div class="row"><span class="muted">Edad</span><b class="mono">${dur(radar.age_min * 60)}</b></div>
+      <div class="row"><span class="muted">Fuente</span><b>${esc(radar.source)}</b></div>
+      <div class="sub" style="margin-top:6px">${radar.reasons.map(esc).join("<br>")}</div>`;
+  }
+  const sigs = p && p.signatures ? p.signatures : [];
+  side += `<div class="links">
+    <a target="_blank" rel="noopener" href="https://gmgn.ai/sol/token/${encodeURIComponent(mint)}">GMGN</a>
+    <a target="_blank" rel="noopener" href="https://dexscreener.com/solana/${encodeURIComponent(mint)}">DexScreener</a>
+    <a target="_blank" rel="noopener" href="https://pump.fun/coin/${encodeURIComponent(mint)}">pump.fun</a>
+    <a target="_blank" rel="noopener" href="https://rugcheck.xyz/tokens/${encodeURIComponent(mint)}">RugCheck</a>
+    ${sigs.map((s, i) => `<a target="_blank" rel="noopener" href="https://solscan.io/tx/${encodeURIComponent(s)}">Tx ${i + 1}</a>`).join("")}
+  </div>`;
+  document.getElementById("dside").innerHTML = side;
+}
+
+async function sellNow(mint) {
+  if (!confirm("¿Vender toda la posición ahora?")) return;
+  const b = document.getElementById("sell-btn"); if (b) { b.disabled = true; b.textContent = "Vendiendo…"; }
+  try {
+    const r = await fetch("/api/sell/" + encodeURIComponent(mint), {method: "POST", headers: {"X-Token": TOKEN}});
+    const j = await r.json();
+    toast(j.ok ? "✅ Vendida" : "⚠️ " + (j.message || j.error));
+  } catch (e) { toast("⚠️ No se pudo conectar con el bot"); }
+  refresh();
+}
+function copy(t) { navigator.clipboard?.writeText(t); toast("Copiado"); }
+
+// ---------- eventos ----------
+document.addEventListener("click", e => {
+  const cp = e.target.closest("[data-copy]"); if (cp) return copy(cp.dataset.copy);
+  const sl = e.target.closest("[data-sell]"); if (sl) return sellNow(sl.dataset.sell);
+  if (e.target.closest("[data-close]")) return closeDetail();
+  const row = e.target.closest("[data-mint]");
+  if (row && !e.target.closest(".drawer")) return openDetail(row.dataset.mint);
+  const t = e.target.closest(".tab");
+  if (t) { tab = t.dataset.tab; document.querySelectorAll(".tab").forEach(x => x.classList.toggle("on", x === t)); renderTab(); }
+  const rf = e.target.closest("[data-rf]");
+  if (rf) { radarFilter = rf.dataset.rf; document.querySelectorAll("[data-rf]").forEach(x => x.classList.toggle("on", x === rf)); renderRadar(); }
+  const rg = e.target.closest("[data-range]");
+  if (rg) { range = +rg.dataset.range; document.querySelectorAll("[data-range]").forEach(x => x.classList.toggle("on", x === rg)); renderEquity(); }
+});
+document.getElementById("overlay").onclick = closeDetail;
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeDetail(); });
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

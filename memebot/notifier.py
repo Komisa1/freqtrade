@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import time
+from collections import deque
 
 import aiohttp
 
@@ -14,9 +16,11 @@ class Notifier:
         self.session = session
         self.token = token
         self.chat_id = chat_id
+        self.events: deque[dict] = deque(maxlen=200)  # historial para el panel web
 
     async def send(self, text: str) -> None:
         log.info(text)
+        self.events.append({"t": time.time(), "text": text})
         if not (self.token and self.chat_id):
             return
         try:

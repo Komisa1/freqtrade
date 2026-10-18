@@ -68,5 +68,10 @@
     "jupiter_base_url": "https://lite-api.jup.ag/swap/v1",
     "confirm_timeout_seconds": 60,
     "price_poll_seconds": 5
+  },
+  "dashboard": {
+    "enabled": true,
+    "port": 8080,
+    "open_browser": true
   }
 }
