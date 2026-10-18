@@ -113,6 +113,36 @@ td { padding: 10px 14px; border-top: 1px solid var(--line); white-space: nowrap;
 .copy { cursor: pointer; color: var(--muted); font-size: 11px; }
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--panel2);
   border: 1px solid var(--line); padding: 10px 16px; border-radius: 8px; display: none; z-index: 20; }
+/* cangrejito */
+.crab-wrap { position: fixed; right: 24px; bottom: 16px; z-index: 9; display: flex; flex-direction: column;
+  align-items: flex-end; pointer-events: none; }
+.crab-bubble { pointer-events: auto; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px;
+  padding: 7px 10px; font-size: 12px; max-width: 220px; margin-bottom: 6px; position: relative; }
+.crab-bubble:after { content: ""; position: absolute; right: 30px; bottom: -6px; width: 10px; height: 10px;
+  background: var(--panel2); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); transform: rotate(45deg); }
+.crab-bubble.hide { display: none; }
+.crab { width: 76px; pointer-events: auto; cursor: pointer; animation: crab-walk 7s ease-in-out infinite; }
+.crab svg { display: block; width: 100%; image-rendering: pixelated; animation: crab-bob .5s ease-in-out infinite alternate; }
+.crab .claw-l { transform-origin: 3px 6px; animation: claw-l .5s ease-in-out infinite alternate; }
+.crab .claw-r { transform-origin: 13px 6px; animation: claw-r .5s ease-in-out infinite alternate; }
+.crab .legs-a { animation: legs 0.25s steps(1) infinite; }
+.crab .legs-b { animation: legs 0.25s steps(1) infinite reverse; }
+.crab .tear { display: none; }
+.crab.happy { animation-duration: 3s; }
+.crab.happy svg { animation-duration: .25s; }
+.crab.happy .claw-l, .crab.happy .claw-r { animation-duration: .2s; }
+.crab.sad { animation: none; }
+.crab.sad svg { animation: crab-sway 2s ease-in-out infinite alternate; }
+.crab.sad .claw-l, .crab.sad .claw-r, .crab.sad .legs-a, .crab.sad .legs-b { animation: none; }
+.crab.sad .tear { display: block; animation: tear 1.6s linear infinite; }
+@keyframes crab-walk { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(-90px); } }
+@keyframes crab-bob { from { transform: translateY(0); } to { transform: translateY(-4px); } }
+@keyframes crab-sway { from { transform: rotate(-4deg); } to { transform: rotate(4deg); } }
+@keyframes claw-l { from { transform: rotate(0); } to { transform: rotate(-22deg); } }
+@keyframes claw-r { from { transform: rotate(0); } to { transform: rotate(22deg); } }
+@keyframes legs { 0% { transform: translateY(0); } 50% { transform: translateY(-1px); } }
+@keyframes tear { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(5px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .crab, .crab * { animation: none !important; } }
 </style>
 </head>
 <body>
@@ -195,6 +225,39 @@ td { padding: 10px 14px; border-top: 1px solid var(--line); white-space: nowrap;
   </div>
 </div>
 <div class="toast" id="toast"></div>
+<div class="crab-wrap">
+  <div class="crab-bubble" id="crab-bubble">¡Hola! Estoy cuidando tus monedas 🦀</div>
+  <div class="crab" id="crab" title="Clic para hablar">
+    <svg viewBox="0 0 16 12" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg">
+      <g fill="#ff6b3d">
+        <!-- ojos -->
+        <rect x="5" y="1" width="1" height="2"/><rect x="10" y="1" width="1" height="2"/>
+        <!-- cuerpo -->
+        <rect x="4" y="3" width="8" height="1"/><rect x="3" y="4" width="10" height="4"/>
+        <rect x="4" y="8" width="8" height="1"/>
+      </g>
+      <g fill="#fff"><rect x="4" y="0" width="2" height="2"/><rect x="10" y="0" width="2" height="2"/></g>
+      <g fill="#111"><rect x="5" y="1" width="1" height="1"/><rect x="10" y="1" width="1" height="1"/>
+        <rect x="6" y="6" width="1" height="1"/><rect x="9" y="6" width="1" height="1"/>
+        <rect x="7" y="7" width="2" height="1"/></g>
+      <rect class="tear" x="4" y="2" width="1" height="1" fill="#6cc4ff"/>
+      <g class="claw-l" fill="#ff6b3d">
+        <rect x="2" y="5" width="1" height="2"/><rect x="1" y="4" width="1" height="2"/>
+        <rect x="0" y="2" width="1" height="3"/><rect x="2" y="2" width="1" height="2"/>
+      </g>
+      <g class="claw-r" fill="#ff6b3d">
+        <rect x="13" y="5" width="1" height="2"/><rect x="14" y="4" width="1" height="2"/>
+        <rect x="15" y="2" width="1" height="3"/><rect x="13" y="2" width="1" height="2"/>
+      </g>
+      <g fill="#d9512b">
+        <g class="legs-a"><rect x="3" y="9" width="1" height="2"/><rect x="7" y="9" width="1" height="2"/>
+          <rect x="12" y="9" width="1" height="2"/></g>
+        <g class="legs-b"><rect x="5" y="9" width="1" height="2"/><rect x="10" y="9" width="1" height="2"/>
+          <rect x="8" y="9" width="1" height="2"/></g>
+      </g>
+    </svg>
+  </div>
+</div>
 
 <script>
 const TOKEN = "__API_TOKEN__";
@@ -270,7 +333,7 @@ function render() {
   setText("winrate", S.trades_closed ? `${Math.round(100 * S.wins / S.trades_closed)}% (${S.wins}/${S.trades_closed})` : "—");
   setText("n-open", S.open.length); setText("n-closed", S.trades_closed);
 
-  renderEquity(); renderCalendar(); renderRadar(); renderTab();
+  renderEquity(); renderCalendar(); renderRadar(); renderTab(); crabMood();
   if (selected) renderDetail(false);
 }
 function setText(id, v) { document.getElementById(id).textContent = v; }
@@ -485,6 +548,38 @@ document.addEventListener("click", e => {
 });
 document.getElementById("overlay").onclick = closeDetail;
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeDetail(); });
+
+// ---------- cangrejito ----------
+let crabMsgAt = 0, crabMsg = "";
+const CRAB_TIPS = [
+  "Recuerda: está en simulación, no se gasta dinero real 😉",
+  "Clic en una moneda para ver su gráfica en vivo 📈",
+  "Las meme coins suben y bajan feo, paciencia 🧘",
+  "El bot vende solo: stop loss, take profit y trailing 💪",
+  "Nunca compartas tu clave privada, ni conmigo 🔐",
+];
+function crabMood() {
+  if (!S) return;
+  const pnl = S.pnl_today_sol + S.upnl_sol, crab = document.getElementById("crab");
+  crab.className = "crab " + (pnl > 0.0001 ? "happy" : pnl < -0.0001 ? "sad" : "");
+  let msg;
+  if (S.open.length) {
+    const best = [...S.open].sort((a, b) => b.multiple - a.multiple)[0];
+    msg = pnl > 0.0001 ? `¡Vamos ganando ${psol(pnl, 3)}! ${best.symbol} va ${best.multiple.toFixed(2)}x 🚀`
+      : pnl < -0.0001 ? `Vamos ${psol(pnl, 3)}… aguanta, el bot cuida el stop loss 😬`
+      : `Vigilando ${S.open.length} posición(es) 👀`;
+  } else {
+    msg = pnl > 0.0001 ? `Hoy vamos ${psol(pnl, 3)} 🤑` : pnl < -0.0001 ? `Hoy vamos ${psol(pnl, 3)}, mañana se recupera 💪`
+      : `Buscando buenas monedas… llevo ${S.stats.seen} vistas 🔎`;
+  }
+  if (Date.now() - crabMsgAt > 20000) setCrab(msg);
+}
+function setCrab(msg) { crabMsg = msg; crabMsgAt = Date.now();
+  const b = document.getElementById("crab-bubble"); b.textContent = msg; b.classList.remove("hide"); }
+document.getElementById("crab").addEventListener("click", () => {
+  crabMsgAt = 0; setCrab(CRAB_TIPS[Math.floor(Math.random() * CRAB_TIPS.length)]); crabMsgAt = Date.now();
+});
+document.getElementById("crab-bubble").addEventListener("click", e => e.currentTarget.classList.add("hide"));
 
 refresh();
 setInterval(refresh, 3000);
