@@ -25,6 +25,7 @@ class State:
         self.path = self.dir / f"state_{mode}.json"
         self.trades_path = self.dir / f"trades_{mode}.csv"
         self.equity_path = self.dir / f"equity_{mode}.csv"
+        self.prices_dir = self.dir / f"prices_{mode}"
         self.positions: dict[str, Position] = {}
         self.closed: list[Position] = []
         self.traded_mints: set[str] = set()
@@ -76,6 +77,48 @@ class State:
     def realized_pnl_today(self, now: float | None = None) -> float:
         today = _day(now or time.time())
         return sum(p.realized_pnl_sol for p in self.closed if _day(p.close_time) == today)
+
+    def record_price(self, mint: str, t: float, price: float) -> None:
+        """Historial de precio de cada posicion (para dibujar la grafica con tus compras)."""
+        self.prices_dir.mkdir(exist_ok=True)
+        with (self.prices_dir / f"{mint}.csv").open("a", encoding="utf-8") as f:
+            f.write(f"{t:.0f},{price:.12g}\n")
+
+    def load_prices(self, mint: str) -> list[tuple[float, float]]:
+        path = self.prices_dir / f"{mint}.csv"
+        if not path.exists():
+            return []
+        out = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                t, p = line.split(",")
+                out.append((float(t), float(p)))
+            except ValueError:
+                continue
+        return out
+
+    def trades_for(self, mint: str) -> list[dict]:
+        """Compras y ventas de un token, leidas del registro trades_*.csv."""
+        if not self.trades_path.exists():
+            return []
+        out = []
+        with self.trades_path.open(encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                if row.get("mint") != mint:
+                    continue
+                try:
+                    out.append(
+                        {
+                            "t": datetime.fromisoformat(row["time_utc"]).timestamp(),
+                            "side": row["side"].lower(),
+                            "sol": float(row["sol"]),
+                            "price": float(row["price_usd"]),
+                            "reason": row.get("reason", ""),
+                        }
+                    )
+                except (KeyError, ValueError):
+                    continue
+        return out
 
     def append_equity(self, point: tuple[float, float]) -> None:
         with self.equity_path.open("a", encoding="utf-8") as f:

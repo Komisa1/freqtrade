@@ -231,7 +231,16 @@ def create_app(bot: Bot) -> web.Application:
             raise web.HTTPNotFound()
         return web.FileResponse(path, headers={"Cache-Control": "no-store"})
 
+    async def api_chart(req: web.Request) -> web.Response:
+        from .chart import build_chart
+
+        data = await build_chart(bot, req.match_info["mint"])
+        if data is None:
+            return web.json_response({"error": "sin operaciones del bot en ese token"}, status=404)
+        return web.json_response(data)
+
     app.router.add_get("/mascota", mascot)
+    app.router.add_get("/api/chart/{mint}", api_chart)
     app.router.add_static("/static", WEB_DIR)
     return app
 

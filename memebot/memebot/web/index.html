@@ -104,6 +104,13 @@ td { padding: 10px 14px; border-top: 1px solid var(--line); white-space: nowrap;
 .dbody { display: grid; grid-template-columns: 1fr 300px; flex: 1; min-height: 0; }
 @media (max-width: 900px) { .dbody { grid-template-columns: 1fr; overflow-y: auto; } }
 .chart-frame { width: 100%; height: 100%; min-height: 480px; border: 0; background: #0b0b0e; }
+#chart-box { display: flex; flex-direction: column; min-height: 480px; min-width: 0; }
+.ctabs { display: flex; gap: 6px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.mychart { flex: 1; min-height: 440px; position: relative; }
+.mychart .empty { position: absolute; inset: 0; display: grid; place-items: center; }
+.dexbox { flex: 1; display: flex; }
+.tlog { margin-top: 6px; }
+.tlog div { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
 .side { border-left: 1px solid var(--line); padding: 14px; overflow-y: auto; }
 .side .row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--line); }
 .btn { border: 0; border-radius: 8px; padding: 11px 14px; font-weight: 700; cursor: pointer; width: 100%; font-size: 14px; }
@@ -566,9 +573,77 @@ function findToken(mint) {
   const trench = all.find(r => r.mint === mint);
   return {pos, closed, radar, info: pos || closed || radar || trench};
 }
-function openDetail(mint) { selected = mint; renderDetail(true);
+function openDetail(mint) { if (selected !== mint) tradeLogHtml = ""; selected = mint; renderDetail(true);
   document.getElementById("drawer").classList.add("on"); document.getElementById("overlay").classList.add("on"); }
-function closeDetail() { selected = null; document.getElementById("chart-box").innerHTML = "";
+// ---------- grafica "Mi operacion": velas + compras/ventas del bot ----------
+let myChart = null, mySeries = null, myLines = [], chartTarget = "", chartTimer = null, tradeLogHtml = "";
+function showDex() {
+  const box = document.getElementById("dexbox");
+  if (box && !box.firstChild) box.innerHTML =
+    `<iframe class="chart-frame" src="https://dexscreener.com/solana/${chartTarget}?embed=1&loadChartSettings=0&tabs=0&info=0&chartLeftToolbar=0&chartTheme=dark&theme=dark&chartStyle=1&chartType=usd&interval=1&trades=1"></iframe>`;
+}
+function setChartTab(t) {
+  document.querySelectorAll("[data-ctab]").forEach(x => x.classList.toggle("on", x.dataset.ctab === t));
+  document.getElementById("mychart").hidden = t !== "mine";
+  document.getElementById("dexbox").hidden = t !== "dex";
+  if (t === "dex") showDex();
+}
+function shortReason(r) { return (r || "").split(" (")[0].split(":")[0].slice(0, 22); }
+async function loadMyChart(mint, first) {
+  clearTimeout(chartTimer);
+  if (selected !== mint) return;
+  const box = document.getElementById("mychart");
+  if (!box) return;
+  let d;
+  try {
+    const r = await fetch("/api/chart/" + encodeURIComponent(mint), {cache: "no-store"});
+    if (!r.ok) throw new Error();
+    d = await r.json();
+  } catch (e) { if (first) box.innerHTML = '<div class="empty">No se pudo cargar la gráfica</div>'; return; }
+  if (selected !== mint) return;
+  setText("chart-src", d.source === "bot" ? "precios guardados por el bot" : "velas de GeckoTerminal");
+  if (!d.candles.length) { box.innerHTML = '<div class="empty">Todavía no hay precios guardados para esta moneda</div>';
+    chartTimer = setTimeout(() => loadMyChart(mint, true), 10000); return; }
+  const tz = new Date().getTimezoneOffset() * 60;
+  if (first || !myChart) {
+    if (myChart) myChart.remove();
+    box.innerHTML = "";
+    myChart = LightweightCharts.createChart(box, {
+      layout: {background: {color: "transparent"}, textColor: "#8b8b98"},
+      grid: {vertLines: {color: "#17171c"}, horzLines: {color: "#17171c"}},
+      rightPriceScale: {borderVisible: false}, timeScale: {borderVisible: false, timeVisible: true, secondsVisible: false},
+      localization: {priceFormatter: price},
+    });
+    mySeries = myChart.addCandlestickSeries({upColor: "#2ebd85", downColor: "#f6465d", borderVisible: false,
+      wickUpColor: "#2ebd85", wickDownColor: "#f6465d", priceFormat: {type: "price", precision: 12, minMove: 1e-12}});
+    new ResizeObserver(() => myChart && myChart.applyOptions({width: box.clientWidth, height: box.clientHeight})).observe(box);
+  }
+  const bars = d.candles.map(c => ({time: c[0] - tz, open: c[1], high: c[2], low: c[3], close: c[4]}));
+  mySeries.setData(bars);
+  const first0 = bars[0].time, last = bars[bars.length - 1].time;
+  const markers = d.trades.map(t => {
+    const tm = Math.min(last, Math.max(first0, Math.floor(t.t / d.step) * d.step - tz));
+    return t.side === "buy"
+      ? {time: tm, position: "belowBar", color: "#2ebd85", shape: "arrowUp", text: `Compra ${t.sol.toFixed(3)} SOL`}
+      : {time: tm, position: "aboveBar", color: "#f6465d", shape: "arrowDown", text: `Venta ${t.sol.toFixed(3)} SOL · ${shortReason(t.reason)}`};
+  }).sort((a, b) => a.time - b.time);
+  mySeries.setMarkers(markers);
+  myLines.forEach(l => mySeries.removePriceLine(l)); myLines = [];
+  const line = (p, color, title) => p && myLines.push(mySeries.createPriceLine({price: p, color, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title}));
+  line(d.entry_price, "#5b8def", "Entrada");
+  line(d.stop_price, "#f6465d", "Stop");
+  (d.tp_prices || []).forEach(tp => line(tp.price, "#2ebd85", tp.label));
+  if (first) myChart.timeScale().fitContent();
+  // lista de operaciones en el panel lateral
+  tradeLogHtml = d.trades.map(t => `<div>${t.side === "buy" ? "🟢 Compró" : "🔴 Vendió"} <b class="mono">${t.sol.toFixed(4)} SOL</b>
+      a <span class="mono">${price(t.price)}</span><br><span class="sub">${new Date(t.t * 1000).toLocaleString()}${t.reason ? " · " + esc(t.reason) : ""}</span></div>`).join("");
+  const tl = document.getElementById("trade-log");
+  if (tl) tl.innerHTML = tradeLogHtml;
+  if (!d.closed) chartTimer = setTimeout(() => loadMyChart(mint, false), 10000);
+}
+
+function closeDetail() { clearTimeout(chartTimer); if (myChart) { myChart.remove(); myChart = null; }
+  selected = null; document.getElementById("chart-box").innerHTML = "";
   document.getElementById("drawer").classList.remove("on"); document.getElementById("overlay").classList.remove("on"); }
 
 function renderDetail(first) {
@@ -576,10 +651,15 @@ function renderDetail(first) {
   if (!info) return;
   const mint = selected, sym = info.symbol;
   if (first) {
-    // grafica de velas en tiempo real de DexScreener (con operaciones en vivo)
-    const target = encodeURIComponent(info.pair || mint);
-    document.getElementById("chart-box").innerHTML =
-      `<iframe class="chart-frame" src="https://dexscreener.com/solana/${target}?embed=1&loadChartSettings=0&tabs=0&info=0&chartLeftToolbar=0&chartTheme=dark&theme=dark&chartStyle=1&chartType=usd&interval=1&trades=1"></iframe>`;
+    const mine = !!(pos || closed);
+    document.getElementById("chart-box").innerHTML = `<div class="ctabs">
+        ${mine ? '<span class="chip on" data-ctab="mine">📍 Mi operación</span>' : ""}
+        <span class="chip ${mine ? "" : "on"}" data-ctab="dex">📈 DexScreener en vivo</span>
+        <span class="spacer"></span><span class="sub" id="chart-src"></span></div>
+      <div class="mychart" id="mychart" ${mine ? "" : "hidden"}></div>
+      <div class="dexbox" id="dexbox" ${mine ? "hidden" : ""}></div>`;
+    chartTarget = encodeURIComponent(info.pair || mint);
+    if (mine) loadMyChart(mint, true); else showDex();
   }
   const p = pos || closed;
   let stats = `<div>${avatar(sym, mint)}</div>
@@ -625,6 +705,7 @@ function renderDetail(first) {
       <div class="row"><span class="muted">Fuente</span><b>${esc(radar.source)}</b></div>
       <div class="sub" style="margin-top:6px">${radar.reasons.map(esc).join("<br>")}</div>`;
   }
+  if (p) side += `<h3 style="margin:16px 0 4px">Operaciones del bot</h3><div class="tlog" id="trade-log">${tradeLogHtml || '<div class="sub">Cargando…</div>'}</div>`;
   const sigs = p && p.signatures ? p.signatures : [];
   side += `<div class="links">
     <a target="_blank" rel="noopener" href="https://gmgn.ai/sol/token/${encodeURIComponent(mint)}">GMGN</a>
@@ -654,6 +735,7 @@ document.addEventListener("click", e => {
   const vw = e.target.closest("[data-view]"); if (vw) return setView(vw.dataset.view);
   const sl = e.target.closest("[data-sell]"); if (sl) return sellNow(sl.dataset.sell);
   if (e.target.closest("[data-close]")) return closeDetail();
+  const ct = e.target.closest("[data-ctab]"); if (ct) return setChartTab(ct.dataset.ctab);
   const row = e.target.closest("[data-mint]");
   if (row && !e.target.closest(".drawer")) return openDetail(row.dataset.mint);
   const t = e.target.closest(".tab");
