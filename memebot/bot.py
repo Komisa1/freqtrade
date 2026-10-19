@@ -310,6 +310,7 @@ class Bot:
             stage=stage,
         )
         self.state.open_position(pos)
+        self.state.record_price(pos.mint, pos.entry_time, snap.price_usd)
         self.state.log_trade(
             "BUY",
             pos,
@@ -340,9 +341,11 @@ class Bot:
             except Exception:  # noqa: BLE001
                 log.exception("Error actualizando precios")
                 continue
+            now = time.time()
             for mint, pos in list(self.state.positions.items()):
                 snap = snaps.get(mint)
                 if snap:
+                    self.state.record_price(mint, now, snap.price_usd)
                     liq = snap.liquidity_usd if snap.liquidity_known else None
                     await self.manage_position(pos, snap.price_usd, liq)
 
