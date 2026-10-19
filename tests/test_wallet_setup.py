@@ -114,3 +114,18 @@ def test_total_loss_cap_ignored_in_paper(tmp_path):
     cfg = RiskConfig(max_total_loss_sol=0.1)
     assert can_open("X", st, 2.0, cfg, live=False)[0]
     assert not can_open("X", st, 2.0, cfg, live=True)[0]
+
+
+def test_capital_cap_allows_fees(tmp_path):
+    from helpers import position
+
+    from memebot.risk import can_open
+    from memebot.state import State
+
+    st = State(tmp_path, "paper")
+    cfg = RiskConfig(trade_size_sol=0.05, max_open_positions=3, max_capital_sol=0.15)
+    st.positions["A"] = position(mint="A", sol_spent=0.0505)
+    st.positions["B"] = position(mint="B", sol_spent=0.0505)
+    assert can_open("C", st, 1.0, cfg, live=False)[0]  # la tercera si cabe
+    st.positions["C"] = position(mint="C", sol_spent=0.0505)
+    assert not can_open("D", st, 1.0, RiskConfig(**{**cfg.__dict__, "max_open_positions": 5}))[0]
