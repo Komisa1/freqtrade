@@ -14,7 +14,8 @@ from .models import Position
 
 
 def _day(ts: float) -> str:
-    return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+    # dia en la hora local de tu compu (igual que el calendario del panel)
+    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
 
 
 class State:
