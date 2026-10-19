@@ -55,6 +55,9 @@ class Bot:
         self.started_at = time.time()
         self.sol_usd = 0.0
         self.last_wallet_sol = 0.0
+        # estado de compras para el panel: "" = puede comprar, si no el motivo de la pausa
+        self.buy_block = ""
+        self.last_eval_at = 0.0
         # wallet preparada en .env (en simulacion no se usa, solo se muestra en el panel)
         self.prepared_wallet = ""
         if cfg.private_key:
@@ -156,6 +159,22 @@ class Bot:
             self.watchlist[mint] = cand
             log.debug("Nuevo candidato %s %s (%s)", cand.symbol, mint, cand.source)
 
+    def _update_buy_block(self) -> None:
+        """Revisa los limites globales (no los de un token puntual) para mostrar en el panel
+        si el bot esta en pausa y por que."""
+        ok, why = risk.can_open(
+            "__probe__", self.state, self.last_wallet_sol, self.cfg.risk, live=self.cfg.live
+        )
+        if not self.state.buy_stages:
+            ok, why = False, "todas las etapas de compra estan apagadas en Trenches"
+        block = "" if ok else why
+        if block != self.buy_block:
+            if block:
+                log.info("Compras en pausa: %s", block)
+            else:
+                log.info("Compras activas de nuevo")
+            self.buy_block = block
+
     def _track_stage_event(self, cand: Candidate) -> None:
         item = {"mint": cand.mint, "symbol": cand.symbol, "name": cand.name, "t": cand.first_seen}
         if cand.source == "pumpfun-new":
@@ -188,6 +207,8 @@ class Bot:
         while True:
             await asyncio.sleep(f.recheck_seconds)
             now = time.time()
+            self.last_eval_at = now
+            self._update_buy_block()
             for mint, cand in list(self.watchlist.items()):
                 if now - cand.first_seen > f.watch_minutes * 60:
                     self.watchlist.pop(mint, None)
@@ -251,7 +272,7 @@ class Bot:
         self, cand: Candidate, snap: TokenSnapshot, score: float, stage: str = ""
     ) -> None:
         wallet = await self.trader.wallet_sol()
-        ok, why = risk.can_open(cand.mint, self.state, wallet, self.cfg.risk)
+        ok, why = risk.can_open(cand.mint, self.state, wallet, self.cfg.risk, live=self.cfg.live)
         if not ok:
             log.debug("No se compra %s: %s", snap.symbol, why)
             return

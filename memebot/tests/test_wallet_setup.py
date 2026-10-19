@@ -98,3 +98,19 @@ def test_recommended_limits_and_apply(tmp_path):
     apply_limits(path, lim)
     loaded = load_config(path, env_file=None)
     assert loaded.risk.trade_size_sol == 0.05 and loaded.risk.cooldown_minutes_after_loss == 5
+
+
+def test_total_loss_cap_ignored_in_paper(tmp_path):
+    import time
+
+    from helpers import position
+
+    from memebot.risk import can_open
+    from memebot.state import State
+
+    st = State(tmp_path, "paper")
+    old = time.time() - 3 * 86400
+    st.closed.append(position(mint="L", sol_spent=0.3, closed=True, close_time=old))
+    cfg = RiskConfig(max_total_loss_sol=0.1)
+    assert can_open("X", st, 2.0, cfg, live=False)[0]
+    assert not can_open("X", st, 2.0, cfg, live=True)[0]
