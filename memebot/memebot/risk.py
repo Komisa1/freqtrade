@@ -36,7 +36,8 @@ def can_open(
             return False, f"tope de perdida total alcanzado ({total:.3f} SOL)"
     if cfg.max_capital_sol > 0:
         in_use = sum(p.sol_spent - p.sol_received for p in state.positions.values())
-        if max(0.0, in_use) + cfg.trade_size_sol > cfg.max_capital_sol:
+        # margen del 3% para que las comisiones de cada compra no bloqueen la ultima posicion
+        if max(0.0, in_use) + cfg.trade_size_sol > cfg.max_capital_sol * 1.03:
             return False, f"tope de capital del bot ({cfg.max_capital_sol} SOL) en uso"
     if wallet_sol - cfg.trade_size_sol < cfg.min_sol_reserve:
         return False, f"saldo insuficiente ({wallet_sol:.3f} SOL)"
