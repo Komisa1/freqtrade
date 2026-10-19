@@ -63,9 +63,41 @@ def import_wallet(env_path: Path, secret: str) -> str:
     return address
 
 
+MIN_TRADE_SOL = 0.05  # por debajo de esto las comisiones se comen buena parte de la ganancia
+TRADE_FEES_SOL = 0.003  # aprox. por operacion completa: prioridad x2 + cuenta de token
+
+
+def recommended_limits(balance_sol: float, reserve: float = 0.05) -> dict[str, float | int]:
+    """Limites prudentes para una wallet chica: ~10% por operacion y como maximo la mitad
+    del saldo en juego. Si el saldo es muy chico, prefiere menos operaciones pero no tan
+    diminutas que las comisiones se coman la ganancia."""
+    usable = max(0.0, balance_sol - reserve)
+    trade = round(max(MIN_TRADE_SOL, balance_sol * 0.1), 3)
+    capital = round(min(usable, max(trade, balance_sol * 0.5)), 3)
+    positions = max(1, min(3, int(capital // trade))) if trade else 1
+    return {
+        "trade_size_sol": trade,
+        "max_open_positions": positions,
+        "max_capital_sol": round(trade * positions, 3),
+        "max_daily_loss_sol": round(max(trade, balance_sol * 0.2), 3),
+        "max_total_loss_sol": round(max(trade * 2, balance_sol * 0.35), 3),
+        "min_sol_reserve": reserve,
+    }
+
+
+def apply_limits(config_path: Path, limits: dict[str, float | int]) -> None:
+    """Escribe los limites en config.json conservando el resto de ajustes."""
+    import json
+
+    data = json.loads(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    data.setdefault("risk", {}).update(limits)
+    config_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
 def risk_warnings(balance_sol: float, cfg: Config) -> list[str]:
     r = cfg.risk
     out = []
+    tip = "Corre: python -m memebot safe-limits"
     needed = r.trade_size_sol * r.max_open_positions + r.min_sol_reserve
     if balance_sol < r.trade_size_sol + r.min_sol_reserve:
         out.append(
@@ -75,18 +107,20 @@ def risk_warnings(balance_sol: float, cfg: Config) -> list[str]:
     elif balance_sol < needed:
         fits = int((balance_sol - r.min_sol_reserve) // r.trade_size_sol)
         out.append(
-            f"Con {balance_sol:.4f} SOL solo caben {fits}"
-            f" de {r.max_open_positions} posiciones a la vez."
+            f"Con {balance_sol:.4f} SOL solo caben {fits} de {r.max_open_positions} "
+            f"posiciones a la vez. {tip}"
         )
-    if balance_sol > 0 and r.trade_size_sol > balance_sol * 0.15:
+    if balance_sol > 0 and r.trade_size_sol > balance_sol * 0.2:
+        out.append(f"Cada operacion ({r.trade_size_sol} SOL) es mas del 20% de tu saldo. {tip}")
+    if r.trade_size_sol < MIN_TRADE_SOL:
+        pct = 100 * TRADE_FEES_SOL / r.trade_size_sol
         out.append(
-            f"Cada operacion ({r.trade_size_sol} SOL) es mas del 15% de tu saldo. "
-            f"Recomendado: risk.trade_size_sol = {max(0.01, round(balance_sol * 0.1, 3))}"
+            f"Operaciones de {r.trade_size_sol} SOL: las comisiones (~{TRADE_FEES_SOL} SOL) "
+            f"serian ~{pct:.0f}% de cada operacion."
         )
-    if r.max_daily_loss_sol > balance_sol * 0.3 and balance_sol > 0:
+    if balance_sol > 0 and r.max_daily_loss_sol > balance_sol * 0.3:
         out.append(
-            f"Perdida diaria maxima ({r.max_daily_loss_sol} SOL) es mas del 30% del saldo. "
-            f"Recomendado: risk.max_daily_loss_sol = {round(balance_sol * 0.2, 3)}"
+            f"Perdida diaria maxima ({r.max_daily_loss_sol} SOL) es mas del 30% del saldo. {tip}"
         )
     return out
 

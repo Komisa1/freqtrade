@@ -112,6 +112,38 @@ def _report(cfg, mode: str) -> None:
         print(f"  Saldo simulado: {st.paper_balance:.4f} SOL")
 
 
+async def _safe_limits(cfg, config_path: Path) -> None:
+    from .solana import SolanaRPC, load_keypair
+    from .wallet_setup import TRADE_FEES_SOL, apply_limits, recommended_limits
+
+    if not cfg.private_key:
+        print("Primero mete una wallet: python -m memebot import-wallet")
+        return
+    address = str(load_keypair(cfg.private_key).pubkey())
+    async with aiohttp.ClientSession(trust_env=True) as session:
+        balance = await SolanaRPC(session, cfg.rpc_url).get_balance_sol(address)
+    lim = recommended_limits(balance)
+    r = cfg.risk
+    print(f"Saldo de la wallet: {balance:.4f} SOL")
+    print("Limites recomendados (ahora -> nuevo):")
+    labels = {
+        "trade_size_sol": "SOL por operacion",
+        "max_open_positions": "Posiciones a la vez",
+        "max_capital_sol": "Tope de capital del bot",
+        "max_daily_loss_sol": "Perdida maxima por dia",
+        "max_total_loss_sol": "Perdida maxima total",
+        "min_sol_reserve": "Reserva que nunca se toca",
+    }
+    for key, label in labels.items():
+        print(f"  {label:<27} {getattr(r, key)!s:>6} -> {lim[key]}")
+    print(f"  (cada operacion paga ~{TRADE_FEES_SOL} SOL de comisiones)")
+    if input("¿Guardar estos limites en config.json? Escribe SI: ").strip().upper() != "SI":
+        print("Cancelado, no se cambio nada.")
+        return
+    apply_limits(config_path, lim)
+    print(f"✅ Guardado en {config_path}. Reinicia el bot para que los use.")
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="memebot", description="Bot de meme coins en Solana")
     ap.add_argument("--config", default="config.json", help="archivo de configuracion")
@@ -125,6 +157,7 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("balance", help="ver saldo de la wallet del bot")
     sub.add_parser("setup-wallet", help="crear la wallet del bot y guardarla en .env")
     sub.add_parser("import-wallet", help="usar tu propia wallet (GMGN/Phantom) para el bot")
+    sub.add_parser("safe-limits", help="poner limites de riesgo seguros segun tu saldo")
     sub.add_parser("preflight", help="revisar que todo este listo para real (sin operar)")
     rep = sub.add_parser("report", help="resumen de resultados")
     rep.add_argument("--live", action="store_true", help="ver resultados del modo live")
@@ -228,6 +261,8 @@ def main(argv: list[str] | None = None) -> None:
         asyncio.run(_check(cfg, args.mint))
     elif args.cmd == "balance":
         asyncio.run(_balance(cfg))
+    elif args.cmd == "safe-limits":
+        asyncio.run(_safe_limits(cfg, Path(args.config)))
     elif args.cmd == "preflight":
         from .wallet_setup import preflight
 
