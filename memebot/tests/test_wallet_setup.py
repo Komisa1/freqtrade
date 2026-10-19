@@ -34,3 +34,44 @@ def test_risk_warnings():
 async def test_preflight_without_key():
     checks = await preflight(Config())
     assert checks[0][0] == "FALTA"
+
+
+def test_import_wallet(tmp_path):
+    import pytest
+    from solders.keypair import Keypair
+
+    from memebot.wallet_setup import import_wallet
+
+    env = tmp_path / ".env"
+    env.write_text("SOLANA_PRIVATE_KEY=\n", encoding="utf-8")
+    kp = Keypair()
+    assert import_wallet(env, f"  {kp}  ") == str(kp.pubkey())
+    assert read_env_key(env) == str(kp)
+    with pytest.raises(ValueError):
+        import_wallet(env, "no-es-una-clave")
+    assert read_env_key(env) == str(kp)  # una clave invalida no borra la anterior
+
+
+def test_capital_and_total_loss_caps(tmp_path):
+    import time
+
+    from helpers import position
+
+    from memebot.risk import can_open
+    from memebot.state import State
+
+    st = State(tmp_path, "live")
+    cfg = RiskConfig(trade_size_sol=0.1, max_capital_sol=0.25, max_open_positions=5)
+    st.positions["A"] = position(mint="A", sol_spent=0.1)
+    st.positions["B"] = position(mint="B", sol_spent=0.1)
+    ok, why = can_open("C", st, 5.0, cfg)
+    assert not ok and "capital" in why
+    st.positions["B"].sol_received = 0.1  # ya recupero lo invertido -> libera capital
+    assert can_open("C", st, 5.0, cfg)[0]
+
+    st2 = State(tmp_path / "x", "live")
+    st2.closed.append(
+        position(mint="L", sol_spent=0.3, closed=True, close_time=time.time() - 3 * 86400)
+    )
+    ok, why = can_open("D", st2, 5.0, RiskConfig(max_total_loss_sol=0.25))
+    assert not ok and "perdida total" in why

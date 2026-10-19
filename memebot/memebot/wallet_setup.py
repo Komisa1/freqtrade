@@ -48,6 +48,21 @@ def setup_wallet(env_path: Path) -> tuple[str, bool]:
     return str(kp.pubkey()), True
 
 
+def import_wallet(env_path: Path, secret: str) -> str:
+    """Guarda una clave existente (p. ej. la de tu wallet de GMGN/Phantom) en .env."""
+    address = str(load_keypair(secret).pubkey())  # valida antes de escribir nada
+    secret = secret.strip()
+    lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+    for i, line in enumerate(lines):
+        if line.strip().startswith(KEY_VAR + "="):
+            lines[i] = f"{KEY_VAR}={secret}"
+            break
+    else:
+        lines.append(f"{KEY_VAR}={secret}")
+    env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return address
+
+
 def risk_warnings(balance_sol: float, cfg: Config) -> list[str]:
     r = cfg.risk
     out = []
@@ -139,6 +154,18 @@ async def preflight(cfg: Config) -> list[tuple[str, str]]:
             for w in risk_warnings(balance, cfg):
                 checks.append(("AVISO", w))
     r = cfg.risk
+    if r.max_capital_sol <= 0:
+        checks.append(
+            (
+                "AVISO",
+                "No hay tope de capital: el bot puede usar todo el saldo de la wallet. Si es tu "
+                "wallet personal, pon risk.max_capital_sol (ej. 0.2) en config.json",
+            )
+        )
+    else:
+        checks.append(("OK", f"Tope de capital del bot: {r.max_capital_sol} SOL"))
+    if r.max_total_loss_sol > 0:
+        checks.append(("OK", f"Tope de perdida total: {r.max_total_loss_sol} SOL"))
     checks.append(
         (
             "OK",

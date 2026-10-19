@@ -124,6 +124,7 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("new-wallet", help="crear una wallet nueva para el bot")
     sub.add_parser("balance", help="ver saldo de la wallet del bot")
     sub.add_parser("setup-wallet", help="crear la wallet del bot y guardarla en .env")
+    sub.add_parser("import-wallet", help="usar tu propia wallet (GMGN/Phantom) para el bot")
     sub.add_parser("preflight", help="revisar que todo este listo para real (sin operar)")
     rep = sub.add_parser("report", help="resumen de resultados")
     rep.add_argument("--live", action="store_true", help="ver resultados del modo live")
@@ -149,6 +150,37 @@ def main(argv: list[str] | None = None) -> None:
         print("     Phantom (Agregar cuenta -> Importar clave privada). Si pierdes .env sin")
         print("     respaldo, pierdes lo que haya en esa wallet.")
         print("   - Nunca compartas la clave con nadie, ni con Claude.")
+        return
+
+    if args.cmd == "import-wallet":
+        import getpass
+
+        from .wallet_setup import import_wallet, read_env_key
+
+        print("Vas a usar TU wallet para el bot. El bot sigue en simulacion hasta que uses --live.")
+        print("Pega tu clave privada y presiona Enter (no se vera nada al pegar, es normal).")
+        print("En PowerShell se pega con clic derecho.")
+        secret = getpass.getpass("Clave privada: ").strip()
+        if not secret:
+            print("Cancelado.")
+            return
+        from .solana import load_keypair
+
+        try:
+            address = str(load_keypair(secret).pubkey())
+        except Exception:  # noqa: BLE001
+            print("❌ Esa clave no es valida. Revisa que la copiaste completa.")
+            return
+        print(f"Direccion de esa clave: {address}")
+        if read_env_key(Path(".env")):
+            print("⚠️  Ya hay otra wallet en .env y se va a reemplazar.")
+            print("   Si le depositaste algo, respaldala antes.")
+        if input("¿Es la misma direccion que ves en GMGN? Escribe SI: ").strip().upper() != "SI":
+            print("Cancelado, no se guardo nada.")
+            return
+        import_wallet(Path(".env"), secret)
+        print("✅ Guardada en .env. Ahora corre: python -m memebot preflight")
+        print("   Recomendado: pon risk.max_capital_sol en config.json para limitar cuanto usa.")
         return
 
     if args.cmd == "new-wallet":

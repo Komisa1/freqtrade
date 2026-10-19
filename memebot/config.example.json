@@ -59,7 +59,9 @@
     "max_daily_loss_sol": 0.5,
     "min_sol_reserve": 0.05,
     "cooldown_minutes_after_loss": 10,
-    "never_rebuy_same_token": true
+    "never_rebuy_same_token": true,
+    "max_capital_sol": 0,
+    "max_total_loss_sol": 0
   },
   "execution": {
     "router": "jupiter",
