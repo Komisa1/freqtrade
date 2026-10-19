@@ -96,18 +96,21 @@ Para bajar la versión más nueva sin perder tu configuración ni tu historial: 
 
 ## Pasar a dinero real
 
-1. Simula al menos unos días y revisa `python -m memebot report`. Si en simulación pierde, en real va a perder más, porque el slippage real es peor.
-2. Crea una wallet **nueva y solo para el bot** (`python -m memebot new-wallet`, o una cuenta nueva en Phantom). No uses tu wallet principal.
-3. Deposita poco: por ejemplo 0.5–1 SOL, más unos 0.05 SOL para fees.
-4. Edita `.env`:
-   ```
-   SOLANA_PRIVATE_KEY=tu_clave_privada_base58
-   SOLANA_RPC_URL=https://mainnet.helius-rpc.com/?api-key=TU_KEY
-   ```
-   El RPC público de Solana es lento y limitado. Uno gratuito de [Helius](https://helius.dev) o QuickNode funciona mucho mejor y hace que las órdenes entren a tiempo.
-5. `python -m memebot run --live`
+Puedes dejar todo preparado sin arriesgar nada:
 
-**Nunca subas `.env` a GitHub** (ya está en `.gitignore`). Quien tenga esa clave puede vaciar la wallet.
+1. `python -m memebot setup-wallet` crea una wallet **nueva y solo para el bot** y la guarda en `.env`. No uses tu wallet principal (ni la de GMGN).
+2. **Respaldo:** abre `.env` con el Bloc de notas, copia la clave e impórtala en Phantom (Agregar cuenta → Importar clave privada). Si pierdes `.env` sin respaldo, pierdes lo que haya en esa wallet.
+3. Para ver la wallet del bot en GMGN, usa el link que da el comando o el de arriba del panel.
+4. Opcional pero recomendado: crea un RPC gratis en [Helius](https://helius.dev) y ponlo en `.env` como `SOLANA_RPC_URL`.
+5. `python -m memebot preflight` revisa la wallet, la conexión, Jupiter y tus límites de riesgo **sin enviar ninguna transacción**.
+
+Cuando la simulación lleve días dando buenos números:
+
+6. Deposita poco SOL en la dirección del bot.
+7. Corre `python -m memebot preflight` otra vez y aplica las recomendaciones de riesgo que te dé.
+8. `python -m memebot run --live` (pide escribir SI para confirmar).
+
+**Nunca subas `.env` a GitHub** (ya está en `.gitignore`) ni se lo pases a nadie, ni a un chat.
 
 ## Alertas en Telegram (opcional)
 

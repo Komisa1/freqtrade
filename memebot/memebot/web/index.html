@@ -419,7 +419,8 @@ function render() {
   setText("watching", S.stats.watching); setText("seen", S.stats.seen);
   setText("bought", S.stats.bought); setText("rugs", S.stats.rug_rejected);
   document.getElementById("wallet").innerHTML = S.wallet
-    ? `Wallet <b class="copy" data-copy="${esc(S.wallet)}">${esc(S.wallet.slice(0, 4))}…${esc(S.wallet.slice(-4))}</b>` : "";
+    ? `${S.wallet_in_use ? "Wallet" : "Wallet del bot (sin usar)"} <b class="copy" data-copy="${esc(S.wallet)}">${esc(S.wallet.slice(0, 4))}…${esc(S.wallet.slice(-4))}</b>
+       · <a target="_blank" rel="noopener" href="https://gmgn.ai/sol/address/${encodeURIComponent(S.wallet)}">ver en GMGN ↗</a>` : "";
 
   const total = S.balance_sol + S.open_value_sol;
   setText("total", total.toFixed(4) + " SOL");

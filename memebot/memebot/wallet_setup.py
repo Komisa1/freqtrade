@@ -1,0 +1,150 @@
+"""Preparacion para operar con dinero real, sin arriesgar nada todavia.
+
+- setup_wallet: crea la wallet del bot y la guarda en .env (sin copiar claves a mano).
+- preflight: revisa wallet, RPC, Jupiter y riesgo. NO envia ninguna transaccion.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import aiohttp
+from solders.keypair import Keypair
+
+from .config import Config
+from .http import get_json
+from .models import WSOL_MINT
+from .solana import LAMPORTS_PER_SOL, SolanaRPC, load_keypair
+
+USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+PUBLIC_RPC = "api.mainnet-beta.solana.com"
+KEY_VAR = "SOLANA_PRIVATE_KEY"
+
+
+def read_env_key(env_path: Path) -> str:
+    if not env_path.exists():
+        return ""
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        if line.strip().startswith(KEY_VAR + "="):
+            return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return ""
+
+
+def setup_wallet(env_path: Path) -> tuple[str, bool]:
+    """Devuelve (direccion, creada_ahora). Si ya hay una clave en .env, no la toca."""
+    existing = read_env_key(env_path)
+    if existing:
+        return str(load_keypair(existing).pubkey()), False
+
+    kp = Keypair()
+    lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+    for i, line in enumerate(lines):
+        if line.strip().startswith(KEY_VAR + "="):
+            lines[i] = f"{KEY_VAR}={kp}"
+            break
+    else:
+        lines.append(f"{KEY_VAR}={kp}")
+    env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return str(kp.pubkey()), True
+
+
+def risk_warnings(balance_sol: float, cfg: Config) -> list[str]:
+    r = cfg.risk
+    out = []
+    needed = r.trade_size_sol * r.max_open_positions + r.min_sol_reserve
+    if balance_sol < r.trade_size_sol + r.min_sol_reserve:
+        out.append(
+            f"Saldo {balance_sol:.4f} SOL no alcanza ni para una operacion "
+            f"({r.trade_size_sol} SOL + {r.min_sol_reserve} de reserva)."
+        )
+    elif balance_sol < needed:
+        fits = int((balance_sol - r.min_sol_reserve) // r.trade_size_sol)
+        out.append(
+            f"Con {balance_sol:.4f} SOL solo caben {fits}"
+            f" de {r.max_open_positions} posiciones a la vez."
+        )
+    if balance_sol > 0 and r.trade_size_sol > balance_sol * 0.15:
+        out.append(
+            f"Cada operacion ({r.trade_size_sol} SOL) es mas del 15% de tu saldo. "
+            f"Recomendado: risk.trade_size_sol = {max(0.01, round(balance_sol * 0.1, 3))}"
+        )
+    if r.max_daily_loss_sol > balance_sol * 0.3 and balance_sol > 0:
+        out.append(
+            f"Perdida diaria maxima ({r.max_daily_loss_sol} SOL) es mas del 30% del saldo. "
+            f"Recomendado: risk.max_daily_loss_sol = {round(balance_sol * 0.2, 3)}"
+        )
+    return out
+
+
+async def preflight(cfg: Config) -> list[tuple[str, str]]:
+    """Lista de (estado, mensaje) con estado en OK / AVISO / FALTA."""
+    checks: list[tuple[str, str]] = []
+    if not cfg.private_key:
+        checks.append(("FALTA", "No hay wallet del bot. Corre: python -m memebot setup-wallet"))
+        return checks
+    try:
+        kp = load_keypair(cfg.private_key)
+    except Exception as e:  # noqa: BLE001
+        checks.append(("FALTA", f"La clave de .env no es valida: {e}"))
+        return checks
+    pubkey = str(kp.pubkey())
+    checks.append(("OK", f"Wallet del bot: {pubkey}"))
+    checks.append(("OK", f"Verla en GMGN: https://gmgn.ai/sol/address/{pubkey}"))
+
+    if PUBLIC_RPC in cfg.rpc_url:
+        checks.append(
+            (
+                "AVISO",
+                "Usas el RPC publico de Solana (lento). Para real conviene uno gratis de "
+                "Helius: https://helius.dev -> SOLANA_RPC_URL en .env",
+            )
+        )
+
+    async with aiohttp.ClientSession(trust_env=True) as session:
+        balance = None
+        try:
+            balance = await SolanaRPC(session, cfg.rpc_url).get_balance_sol(pubkey)
+            checks.append(("OK", f"Conexion a Solana OK. Saldo: {balance:.4f} SOL"))
+        except Exception as e:  # noqa: BLE001
+            checks.append(("FALTA", f"No se pudo conectar al RPC de Solana: {e}"))
+
+        try:
+            quote = await get_json(
+                session,
+                f"{cfg.execution.jupiter_base_url}/quote",
+                params={
+                    "inputMint": WSOL_MINT,
+                    "outputMint": USDC_MINT,
+                    "amount": str(int(cfg.risk.trade_size_sol * LAMPORTS_PER_SOL)),
+                    "slippageBps": "50",
+                },
+                retries=2,
+            )
+            usdc = int(quote["outAmount"]) / 1e6
+            checks.append(
+                (
+                    "OK",
+                    f"Jupiter OK: {cfg.risk.trade_size_sol} SOL ~ ${usdc:,.2f} (solo cotizacion)",
+                )
+            )
+        except Exception as e:  # noqa: BLE001
+            checks.append(("FALTA", f"No se pudo cotizar en Jupiter: {e}"))
+
+    if balance is not None:
+        if balance == 0:
+            checks.append(
+                ("AVISO", "La wallet esta vacia. Deposita SOL solo cuando decidas ir a real.")
+            )
+        else:
+            for w in risk_warnings(balance, cfg):
+                checks.append(("AVISO", w))
+    r = cfg.risk
+    checks.append(
+        (
+            "OK",
+            f"Riesgo actual: {r.trade_size_sol} SOL por operacion, max {r.max_open_positions} "
+            f"posiciones, perdida diaria max {r.max_daily_loss_sol} SOL, "
+            f"stop loss -{cfg.exits.stop_loss_pct:.0f}%",
+        )
+    )
+    return checks

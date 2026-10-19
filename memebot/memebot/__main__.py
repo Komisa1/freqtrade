@@ -123,6 +123,8 @@ def main(argv: list[str] | None = None) -> None:
     chk.add_argument("mint")
     sub.add_parser("new-wallet", help="crear una wallet nueva para el bot")
     sub.add_parser("balance", help="ver saldo de la wallet del bot")
+    sub.add_parser("setup-wallet", help="crear la wallet del bot y guardarla en .env")
+    sub.add_parser("preflight", help="revisar que todo este listo para real (sin operar)")
     rep = sub.add_parser("report", help="resumen de resultados")
     rep.add_argument("--live", action="store_true", help="ver resultados del modo live")
     args = ap.parse_args(argv)
@@ -131,6 +133,23 @@ def main(argv: list[str] | None = None) -> None:
             stream.reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, ValueError):
             pass
+
+    if args.cmd == "setup-wallet":
+        from .wallet_setup import setup_wallet
+
+        address, created = setup_wallet(Path(".env"))
+        if created:
+            print("✅ Wallet del bot creada y guardada en el archivo .env")
+        else:
+            print("ℹ️  Ya tenias una wallet del bot en .env (no se cambio nada)")
+        print(f"   Direccion: {address}")
+        print(f"   Verla en GMGN: https://gmgn.ai/sol/address/{address}")
+        print("   - NO deposites nada todavia: el bot sigue en simulacion.")
+        print("   - Respaldo: abre .env con el Bloc de notas, copia la clave e importala en")
+        print("     Phantom (Agregar cuenta -> Importar clave privada). Si pierdes .env sin")
+        print("     respaldo, pierdes lo que haya en esa wallet.")
+        print("   - Nunca compartas la clave con nadie, ni con Claude.")
+        return
 
     if args.cmd == "new-wallet":
         from solders.keypair import Keypair
@@ -177,6 +196,22 @@ def main(argv: list[str] | None = None) -> None:
         asyncio.run(_check(cfg, args.mint))
     elif args.cmd == "balance":
         asyncio.run(_balance(cfg))
+    elif args.cmd == "preflight":
+        from .wallet_setup import preflight
+
+        icons = {"OK": "✅", "AVISO": "⚠️ ", "FALTA": "❌"}
+        checks = asyncio.run(preflight(cfg))
+        print("Revision para modo real (no se envio ninguna transaccion):")
+        for status, msg in checks:
+            print(f"  {icons[status]} {msg}")
+        if any(s == "FALTA" for s, _ in checks):
+            print("Resultado: todavia faltan cosas (marcadas con ❌).")
+        elif any(s == "AVISO" for s, _ in checks):
+            print("Resultado: tecnicamente listo, pero revisa los avisos ⚠️ .")
+        else:
+            print(
+                "Resultado: todo listo. Aun asi, solo pasa a real cuando la simulacion sea buena."
+            )
     elif args.cmd == "report":
         _report(cfg, "live" if args.live else "paper")
 

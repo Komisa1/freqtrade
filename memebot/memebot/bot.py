@@ -55,6 +55,15 @@ class Bot:
         self.started_at = time.time()
         self.sol_usd = 0.0
         self.last_wallet_sol = 0.0
+        # wallet preparada en .env (en simulacion no se usa, solo se muestra en el panel)
+        self.prepared_wallet = ""
+        if cfg.private_key:
+            try:
+                from .solana import load_keypair
+
+                self.prepared_wallet = str(load_keypair(cfg.private_key).pubkey())
+            except Exception:  # noqa: BLE001
+                log.warning("SOLANA_PRIVATE_KEY en .env no es valida")
         # ultima evaluacion de cada token vigilado (para el "radar" del panel)
         self.radar: dict[str, dict] = {}
         self.equity: deque[tuple[float, float]] = deque(

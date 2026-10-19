@@ -149,7 +149,8 @@ def build_state(bot: Bot) -> dict[str, Any]:
     return {
         "now": now,
         "mode": bot.mode,
-        "wallet": getattr(bot.trader, "pubkey", ""),
+        "wallet": getattr(bot.trader, "pubkey", "") or bot.prepared_wallet,
+        "wallet_in_use": bool(getattr(bot.trader, "pubkey", "")),
         "sol_usd": bot.sol_usd,
         "balance_sol": bot.last_wallet_sol,
         "open_value_sol": sum(p["value_sol"] for p in open_pos),
