@@ -25,8 +25,11 @@ def test_setup_wallet_without_env(tmp_path):
 def test_risk_warnings():
     cfg = Config(risk=RiskConfig(trade_size_sol=0.1, max_open_positions=3, max_daily_loss_sol=0.5))
     assert any("no alcanza" in w for w in risk_warnings(0.1, cfg))
-    warns = risk_warnings(0.5, cfg)
-    assert any("15%" in w for w in warns) and any("diaria" in w for w in warns)
+    warns = risk_warnings(0.4, cfg)
+    assert any("20%" in w for w in warns) and any("diaria" in w for w in warns)
+    assert any(
+        "comisiones" in w for w in risk_warnings(1.0, Config(risk=RiskConfig(trade_size_sol=0.02)))
+    )
     ok = Config(risk=RiskConfig(trade_size_sol=0.05, max_open_positions=3, max_daily_loss_sol=0.2))
     assert risk_warnings(2.0, ok) == []
 
@@ -75,3 +78,23 @@ def test_capital_and_total_loss_caps(tmp_path):
     )
     ok, why = can_open("D", st2, 5.0, RiskConfig(max_total_loss_sol=0.25))
     assert not ok and "perdida total" in why
+
+
+def test_recommended_limits_and_apply(tmp_path):
+    import json
+
+    from memebot.config import load_config
+    from memebot.wallet_setup import apply_limits, recommended_limits
+
+    lim = recommended_limits(0.3164)
+    assert lim["trade_size_sol"] == 0.05 and lim["max_open_positions"] == 3
+    assert lim["max_capital_sol"] <= 0.3164 / 2 + 1e-9
+    cfg = Config(risk=RiskConfig(**lim))
+    assert risk_warnings(0.3164, cfg) == []
+    tiny = recommended_limits(0.12)
+    assert tiny["max_open_positions"] == 1
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"_nota": "x", "risk": {"cooldown_minutes_after_loss": 5}}))
+    apply_limits(path, lim)
+    loaded = load_config(path, env_file=None)
+    assert loaded.risk.trade_size_sol == 0.05 and loaded.risk.cooldown_minutes_after_loss == 5
