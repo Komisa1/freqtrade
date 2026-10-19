@@ -26,6 +26,18 @@ if TYPE_CHECKING:
 log = logging.getLogger("memebot")
 
 WEB_DIR = Path(__file__).parent / "web"
+BOT_DIR = Path(__file__).resolve().parents[1]  # carpeta donde esta start.bat
+MASCOT_NAMES = ("mascota.png", "mascota.jpg", "mascota.jpeg", "mascota.webp", "mascota.gif")
+
+
+def find_mascot() -> Path | None:
+    """Imagen propia para reemplazar al cangrejo: un archivo 'mascota.*' en la carpeta del bot."""
+    for folder in dict.fromkeys((BOT_DIR, Path.cwd())):
+        for name in MASCOT_NAMES:
+            path = folder / name
+            if path.is_file():
+                return path
+    return None
 
 
 def _pos_dict(p: Position) -> dict[str, Any]:
@@ -105,6 +117,11 @@ def build_trenches(bot: Bot) -> dict[str, list[dict[str, Any]]]:
     return out
 
 
+def _mascot_url() -> str | None:
+    path = find_mascot()
+    return f"/mascota?v={int(path.stat().st_mtime)}" if path else None
+
+
 def build_state(bot: Bot) -> dict[str, Any]:
     st = bot.state
     now = time.time()
@@ -149,6 +166,7 @@ def build_state(bot: Bot) -> dict[str, Any]:
         "trenches": build_trenches(bot),
         "stage_stats": stage_stats(closed_all),
         "buy_stages": bot.state.buy_stages,
+        "mascot": _mascot_url(),
         "events": list(bot.notifier.events)[-80:][::-1],
         "stats": {
             **bot.stats,
@@ -203,6 +221,14 @@ def create_app(bot: Bot) -> web.Application:
     app.router.add_get("/api/state", api_state)
     app.router.add_post("/api/sell/{mint}", api_sell)
     app.router.add_post("/api/buy-stages", api_buy_stages)
+
+    async def mascot(_req: web.Request) -> web.StreamResponse:
+        path = find_mascot()
+        if not path:
+            raise web.HTTPNotFound()
+        return web.FileResponse(path, headers={"Cache-Control": "no-store"})
+
+    app.router.add_get("/mascota", mascot)
     app.router.add_static("/static", WEB_DIR)
     return app
 

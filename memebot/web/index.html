@@ -195,6 +195,18 @@ td { padding: 10px 14px; border-top: 1px solid var(--line); white-space: nowrap;
 @keyframes legs { 0% { transform: translateY(0); } 50% { transform: translateY(-1px); } }
 @keyframes tear { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(6px); opacity: 0; } }
 @keyframes blink { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(.1); } }
+.crab .mascot-img { display: block; width: 96px; height: 96px; object-fit: cover; border-radius: 50%;
+  border: 3px solid #ff9aa2; box-shadow: 0 6px 18px rgba(0,0,0,.5); animation: crab-bob .45s ease-in-out infinite alternate; }
+.crab.has-img { width: 96px; }
+.crab .fx { position: absolute; font-size: 20px; display: none; pointer-events: none; }
+.crab .fx-tear { left: 18px; top: 34px; animation: tear 1.6s linear infinite; }
+.crab .fx-spark { right: -6px; top: -8px; animation: sparkle 1s ease-in-out infinite alternate; }
+.crab.has-img .crab-body { position: relative; }
+.crab.has-img.happy .fx-spark, .crab.has-img .crab-body.jump .fx-spark { display: block; }
+.crab.has-img.sad .fx-tear { display: block; }
+.crab.has-img.sad .mascot-img { filter: saturate(.45) brightness(.85); animation-duration: 1.2s; }
+.crab.has-img.happy .mascot-img { animation-duration: .22s; }
+@keyframes sparkle { from { transform: scale(.7) rotate(0); opacity: .6; } to { transform: scale(1.2) rotate(20deg); opacity: 1; } }
 @keyframes pop { 0% { transform: scale(.6); } 70% { transform: scale(1.08); } 100% { transform: scale(1); } }
 .confetti { position: fixed; width: 8px; height: 12px; z-index: 30; pointer-events: none; border-radius: 2px;
   animation: confetti-fall var(--d) cubic-bezier(.2,.6,.4,1) forwards; }
@@ -733,7 +745,7 @@ const fill = (t, d) => t.replace(/\{(\w+)\}/g, (_, k) => d[k] ?? "");
 function setCrab(msg, hold = 20000) {
   crabMsgAt = Date.now() + hold - 20000;
   const b = document.getElementById("crab-bubble");
-  b.textContent = msg; b.classList.remove("hide", "pop"); void b.offsetWidth; b.classList.add("pop");
+  b.textContent = mascotText(msg); b.classList.remove("hide", "pop"); void b.offsetWidth; b.classList.add("pop");
 }
 function crabAct(kind) {
   const body = document.getElementById("crab-body");
@@ -784,12 +796,27 @@ function crabEvents() {
   crabSeen = now;
 }
 
+let mascotUrl = null;
+function applyMascot() {
+  if ((S.mascot || null) === mascotUrl) return;
+  mascotUrl = S.mascot || null;
+  const body = document.getElementById("crab-body");
+  if (!body._svg) body._svg = body.innerHTML;
+  if (mascotUrl) {
+    body.innerHTML = `<img class="mascot-img" alt="" src="${esc(mascotUrl)}"><span class="fx fx-tear">💧</span><span class="fx fx-spark">✨</span>`;
+  } else {
+    body.innerHTML = body._svg;
+  }
+}
+const mascotText = t => mascotUrl ? t.replace(/las tenazas/g, "los dedos").replace(/🦀/g, "✨") : t;
+
 function crabMood() {
   if (!S) return;
+  applyMascot();
   crabEvents();
   const pnl = S.pnl_today_sol + S.upnl_sol, crab = document.getElementById("crab");
   const mood = pnl > 0.0001 ? "happy" : pnl < -0.0001 ? "sad" : "";
-  crab.className = "crab " + mood;
+  crab.className = "crab " + mood + (mascotUrl ? " has-img" : "");
   if (Date.now() - crabMsgAt < 20000) return;
   const best = [...S.open].sort((a, b) => b.multiple - a.multiple)[0];
   const d = {pnl: psol(pnl, 3), seen: S.stats.seen, best: best ? best.symbol : "", x: best ? best.multiple.toFixed(2) + "x" : ""};

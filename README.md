@@ -70,6 +70,8 @@ Al arrancar, el bot abre solo tu navegador en **http://127.0.0.1:8080**. Si no s
 - **Trenches** (botón arriba): tres columnas como en GMGN: **Nuevas**, **A punto de migrar** (con la barra de progreso de la curva de pump.fun) y **Migradas**. Cada columna tiene un switch **Comprar** para decidir en qué etapas puede comprar el bot.
 - En **Cerradas** sale una tabla de **resultados por etapa**, para ver con números cuál etapa deja más.
 
+- **Mascota propia**: guarda una imagen con el nombre **`mascota.png`** (o `.jpg`, `.webp`, `.gif`) en la carpeta del bot (donde está `start`) y aparece en lugar del cangrejo, con los mismos bailes y reacciones. Para volver al cangrejo, borra o renombra ese archivo. La imagen se queda solo en tu compu.
+
 El panel solo se ve desde tu computadora: nadie de afuera puede entrar.
 
 ## Uso
