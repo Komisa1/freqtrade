@@ -23,6 +23,14 @@ def can_open(
         return False, f"limite de perdida diaria alcanzado ({pnl_today:.3f} SOL)"
     if state.last_loss_time and now - state.last_loss_time < cfg.cooldown_minutes_after_loss * 60:
         return False, "enfriamiento despues de una perdida"
+    if cfg.max_total_loss_sol > 0:
+        total = sum(p.realized_pnl_sol for p in state.closed)
+        if total <= -cfg.max_total_loss_sol:
+            return False, f"tope de perdida total alcanzado ({total:.3f} SOL)"
+    if cfg.max_capital_sol > 0:
+        in_use = sum(p.sol_spent - p.sol_received for p in state.positions.values())
+        if max(0.0, in_use) + cfg.trade_size_sol > cfg.max_capital_sol:
+            return False, f"tope de capital del bot ({cfg.max_capital_sol} SOL) en uso"
     if wallet_sol - cfg.trade_size_sol < cfg.min_sol_reserve:
         return False, f"saldo insuficiente ({wallet_sol:.3f} SOL)"
     return True, ""

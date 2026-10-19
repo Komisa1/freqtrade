@@ -104,6 +104,12 @@ Puedes dejar todo preparado sin arriesgar nada:
 4. Opcional pero recomendado: crea un RPC gratis en [Helius](https://helius.dev) y ponlo en `.env` como `SOLANA_RPC_URL`.
 5. `python -m memebot preflight` revisa la wallet, la conexión, Jupiter y tus límites de riesgo **sin enviar ninguna transacción**.
 
+**¿Quieres usar tu propia wallet (la de GMGN o Phantom)?** Corre `python -m memebot import-wallet`: te pide la clave sin mostrarla y, antes de guardar, te enseña la dirección para que confirmes que es la tuya. En ese caso pon topes en `config.json` → `risk`:
+- `max_capital_sol`: máximo de SOL que el bot puede tener metido a la vez (por ejemplo `0.2`).
+- `max_total_loss_sol`: si la pérdida acumulada llega a esto, deja de comprar (por ejemplo `0.15`).
+
+Así el bot nunca toca todo tu saldo. El bot solo vende las monedas que él compró, nunca las tuyas. Mientras el bot opera en real, evita operar a mano desde la misma wallet: se confunden los números de ganancia del bot.
+
 Cuando la simulación lleve días dando buenos números:
 
 6. Deposita poco SOL en la dirección del bot.

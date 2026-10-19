@@ -68,6 +68,9 @@ class RiskConfig:
     min_sol_reserve: float = 0.05  # SOL que nunca se gasta (fees, cuentas de token)
     cooldown_minutes_after_loss: float = 10
     never_rebuy_same_token: bool = True
+    # Topes para cuando el bot usa tu wallet personal (0 = sin tope):
+    max_capital_sol: float = 0  # SOL maximos metidos en posiciones abiertas a la vez
+    max_total_loss_sol: float = 0  # si la perdida acumulada llega a esto, deja de comprar
 
 
 @dataclass
