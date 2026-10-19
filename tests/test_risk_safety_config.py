@@ -24,8 +24,9 @@ def test_risk_limits(tmp_path):
     st.close_position(p, "test")
     st.last_loss_time = 0
     st.closed.append(position(mint="C", sol_spent=0.2, closed=True, close_time=time.time()))
-    ok, why = can_open("B", st, 1.0, cfg)
+    ok, why = can_open("B", st, 1.0, cfg)  # live por defecto
     assert not ok and "perdida diaria" in why
+    assert can_open("B", st, 1.0, cfg, live=False)[0]  # la simulacion no se pausa
     assert not can_open("A", State(tmp_path, "paper"), 1.0, RiskConfig())[
         0
     ]  # ya operado (persistido)

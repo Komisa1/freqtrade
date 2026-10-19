@@ -23,13 +23,13 @@ def can_open(
         return False, "token ya operado antes"
     if len(state.positions) >= cfg.max_open_positions:
         return False, f"maximo de posiciones abiertas ({cfg.max_open_positions})"
+    # los limites de perdida (diaria y total) protegen tu dinero real; en simulacion no se
+    # aplican para que el bot siga juntando datos aunque vaya en perdida
     pnl_today = state.realized_pnl_today(now)
-    if pnl_today <= -cfg.max_daily_loss_sol:
+    if live and pnl_today <= -cfg.max_daily_loss_sol:
         return False, f"limite de perdida diaria alcanzado ({pnl_today:.3f} SOL)"
     if state.last_loss_time and now - state.last_loss_time < cfg.cooldown_minutes_after_loss * 60:
         return False, "enfriamiento despues de una perdida"
-    # el tope de perdida total protege tu dinero real; en simulacion no se aplica para que
-    # el bot siga juntando datos aunque el historial simulado vaya en perdida
     if live and cfg.max_total_loss_sol > 0:
         total = sum(p.realized_pnl_sol for p in state.closed)
         if total <= -cfg.max_total_loss_sol:
