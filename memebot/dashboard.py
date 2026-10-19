@@ -167,6 +167,8 @@ def build_state(bot: Bot) -> dict[str, Any]:
         "trenches": build_trenches(bot),
         "stage_stats": stage_stats(closed_all),
         "buy_stages": bot.state.buy_stages,
+        "buy_block": bot.buy_block,
+        "last_eval_at": bot.last_eval_at,
         "mascot": _mascot_url(),
         "events": list(bot.notifier.events)[-80:][::-1],
         "stats": {

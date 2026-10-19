@@ -31,6 +31,8 @@ header { display: flex; align-items: center; gap: 16px; padding: 10px 16px;
   margin-right: 6px; box-shadow: 0 0 8px var(--green); }
 .dot.off { background: var(--red); box-shadow: 0 0 8px var(--red); }
 .spacer { flex: 1; }
+.buystat { font-size: 12px; padding: 3px 9px; border-radius: 6px; background: var(--green-bg); color: var(--green); }
+.buystat.paused { background: rgba(240,185,11,.15); color: var(--yellow); }
 
 .layout { display: grid; grid-template-columns: 300px 1fr; gap: 12px; padding: 12px; }
 @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .radar { max-height: 360px; } }
@@ -221,6 +223,7 @@ td { padding: 10px 14px; border-top: 1px solid var(--line); white-space: nowrap;
   <div class="logo">meme<span>bot</span></div>
   <span id="mode" class="badge paper">SIMULACIÓN</span>
   <span class="hstat"><span id="dot" class="dot"></span><span id="conn">conectando…</span></span>
+  <span class="buystat" id="buystat"></span>
   <span class="hstat">SOL <b id="solusd">—</b></span>
   <span class="hstat">Vigilando <b id="watching">0</b></span>
   <span class="hstat">Vistos <b id="seen">0</b></span>
@@ -416,6 +419,10 @@ function render() {
   const m = document.getElementById("mode");
   m.textContent = live ? "DINERO REAL" : "SIMULACIÓN"; m.className = "badge " + (live ? "live" : "paper");
   setText("solusd", S.sol_usd ? usd(S.sol_usd) : "—");
+  const bs = document.getElementById("buystat");
+  const ago = S.last_eval_at ? Math.max(0, Math.round(S.now - S.last_eval_at)) : null;
+  if (S.buy_block) { bs.className = "buystat paused"; bs.textContent = "⏸️ No compra: " + S.buy_block; }
+  else { bs.className = "buystat"; bs.textContent = "🟢 Buscando para comprar" + (ago != null ? ` · analizó hace ${ago}s` : ""); }
   setText("watching", S.stats.watching); setText("seen", S.stats.seen);
   setText("bought", S.stats.bought); setText("rugs", S.stats.rug_rejected);
   document.getElementById("wallet").innerHTML = S.wallet
@@ -822,6 +829,7 @@ function crabMood() {
   const best = [...S.open].sort((a, b) => b.multiple - a.multiple)[0];
   const d = {pnl: psol(pnl, 3), seen: S.stats.seen, best: best ? best.symbol : "", x: best ? best.multiple.toFixed(2) + "x" : ""};
   let pool = mood === "happy" ? CRAB.happy : mood === "sad" ? CRAB.sad : CRAB.idle;
+  if (S.buy_block && Math.random() < 0.5) pool = [`Ahorita no estoy comprando: ${S.buy_block} ⏸️`];
   if (!best) pool = pool.filter(t => !t.includes("{best}"));
   setCrab(fill(pick(pool), d));
 }

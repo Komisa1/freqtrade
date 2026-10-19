@@ -9,7 +9,12 @@ from .state import State
 
 
 def can_open(
-    mint: str, state: State, wallet_sol: float, cfg: RiskConfig, now: float | None = None
+    mint: str,
+    state: State,
+    wallet_sol: float,
+    cfg: RiskConfig,
+    now: float | None = None,
+    live: bool = True,
 ) -> tuple[bool, str]:
     now = now or time.time()
     if mint in state.positions:
@@ -23,7 +28,9 @@ def can_open(
         return False, f"limite de perdida diaria alcanzado ({pnl_today:.3f} SOL)"
     if state.last_loss_time and now - state.last_loss_time < cfg.cooldown_minutes_after_loss * 60:
         return False, "enfriamiento despues de una perdida"
-    if cfg.max_total_loss_sol > 0:
+    # el tope de perdida total protege tu dinero real; en simulacion no se aplica para que
+    # el bot siga juntando datos aunque el historial simulado vaya en perdida
+    if live and cfg.max_total_loss_sol > 0:
         total = sum(p.realized_pnl_sol for p in state.closed)
         if total <= -cfg.max_total_loss_sol:
             return False, f"tope de perdida total alcanzado ({total:.3f} SOL)"
