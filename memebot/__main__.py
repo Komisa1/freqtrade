@@ -158,6 +158,9 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("setup-wallet", help="crear la wallet del bot y guardarla en .env")
     sub.add_parser("import-wallet", help="usar tu propia wallet (GMGN/Phantom) para el bot")
     sub.add_parser("safe-limits", help="poner limites de riesgo seguros segun tu saldo")
+    st = sub.add_parser("set", help="cambiar un ajuste, ej: set risk.max_open_positions 4")
+    st.add_argument("key")
+    st.add_argument("value")
     sub.add_parser("preflight", help="revisar que todo este listo para real (sin operar)")
     rep = sub.add_parser("report", help="resumen de resultados")
     rep.add_argument("--live", action="store_true", help="ver resultados del modo live")
@@ -224,6 +227,17 @@ def main(argv: list[str] | None = None) -> None:
         print(f"  Direccion (para depositar SOL): {kp.pubkey()}")
         print(f"  Clave privada (va en .env como SOLANA_PRIVATE_KEY): {kp}")
         print("Puedes importarla en Phantom para verla. Nunca la compartas con nadie.")
+        return
+
+    if args.cmd == "set":
+        from .config import set_setting
+
+        try:
+            old, new = set_setting(Path(args.config), args.key, args.value)
+        except ValueError as e:
+            print(f"❌ No se cambio nada: {e}")
+            return
+        print(f"✅ {args.key}: {old} -> {new}  (reinicia el bot para que lo use)")
         return
 
     cfg_path = args.config if Path(args.config).exists() else None
