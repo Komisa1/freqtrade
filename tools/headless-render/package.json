@@ -1,0 +1,13 @@
+{
+  "name": "headless-render",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Bucle de renderizado headless: pinta cada fotograma en Chrome, lo captura y lo une en un MP4 con ffmpeg",
+  "scripts": {
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.56.1"
+  }
+}
