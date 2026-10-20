@@ -102,6 +102,24 @@ def _report(cfg, mode: str) -> None:
                 f"    {s['label']:<20} {s['trades']:>3} trades  aciertos {s['wins']}/{s['trades']}"
                 f"  PnL {s['pnl_sol']:+.4f} SOL ({s['roi_pct']:+.1f}%)  mejor {s['best_x']:.2f}x"
             )
+        from .analysis import compare_winners_losers, mode_stats
+
+        print("  Por forma de entrada:")
+        for s in mode_stats(closed):
+            print(
+                f"    {s['label']:<20} {s['trades']:>3} trades  aciertos {s['wins']}/{s['trades']}"
+                f"  PnL {s['pnl_sol']:+.4f} SOL ({s['roi_pct']:+.1f}%)  mejor {s['best_x']:.2f}x"
+            )
+        cmp = compare_winners_losers(closed)
+        if cmp["wins"] + cmp["losses"]:
+            print(
+                f"  Ganadoras vs perdedoras al comprar (mediana; {cmp['wins']} ganadoras, "
+                f"{cmp['losses']} perdedoras con datos):"
+            )
+            for r in cmp["rows"]:
+                w = "—" if r["win"] is None else f"{r['win']:,}"
+                lo = "—" if r["loss"] is None else f"{r['loss']:,}"
+                print(f"    {r['label']:<26} ganadoras {w:>12}   perdedoras {lo:>12}")
         print("  Ultimas 15:")
         for p in closed[-15:]:
             print(
@@ -157,6 +175,8 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("balance", help="ver saldo de la wallet del bot")
     sub.add_parser("setup-wallet", help="crear la wallet del bot y guardarla en .env")
     sub.add_parser("import-wallet", help="usar tu propia wallet (GMGN/Phantom) para el bot")
+    est = sub.add_parser("estrategia", help="aplicar la estrategia recomendada (marin-v2)")
+    est.add_argument("preset", nargs="?", default="marin-v2")
     sub.add_parser("safe-limits", help="poner limites de riesgo seguros segun tu saldo")
     st = sub.add_parser("set", help="cambiar un ajuste, ej: set risk.max_open_positions 4")
     st.add_argument("key")
@@ -227,6 +247,27 @@ def main(argv: list[str] | None = None) -> None:
         print(f"  Direccion (para depositar SOL): {kp.pubkey()}")
         print(f"  Clave privada (va en .env como SOLANA_PRIVATE_KEY): {kp}")
         print("Puedes importarla en Phantom para verla. Nunca la compartas con nadie.")
+        return
+
+    if args.cmd == "estrategia":
+        from .config import STRATEGY_PRESETS, apply_preset, preset_changes
+
+        if args.preset not in STRATEGY_PRESETS:
+            print(f"❌ No existe '{args.preset}'. Opciones: {', '.join(STRATEGY_PRESETS)}")
+            return
+        path = Path(args.config)
+        changes = preset_changes(path, args.preset)
+        if not changes:
+            print(f"✅ Ya tienes la estrategia {args.preset}, no hay nada que cambiar.")
+            return
+        print(f"Estrategia {args.preset} — cambios:")
+        for key, old, new in changes:
+            print(f"  {key:<42} {old!s:>10} -> {new}")
+        if input("¿Aplicar? Escribe SI: ").strip().upper() != "SI":
+            print("Cancelado, no se cambio nada.")
+            return
+        apply_preset(path, args.preset)
+        print("✅ Listo. Reinicia el bot para que la use.")
         return
 
     if args.cmd == "set":

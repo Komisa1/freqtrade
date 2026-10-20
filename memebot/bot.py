@@ -11,6 +11,7 @@ import aiohttp
 
 from . import risk
 from .config import Config
+from .entry import Armed, check_pullback
 from .exits import ExitAction, decide_exit
 from .models import WSOL_MINT, Candidate, Position, TokenSnapshot
 from .notifier import Notifier
@@ -73,6 +74,8 @@ class Bot:
             self.state.load_equity(time.time() - 30 * 86400), maxlen=100_000
         )
         self._selling: set[str] = set()
+        # tokens que ya calificaron y esperan un retroceso para comprar (modo pullback)
+        self.armed: dict[str, Armed] = {}
         # columnas tipo GMGN: creaciones y migraciones recientes de pump.fun
         self.recent_new: deque[dict] = deque(maxlen=60)
         self.recent_migrated: deque[dict] = deque(maxlen=60)
@@ -85,7 +88,7 @@ class Bot:
         self.last_wallet_sol = wallet
         who = f" wallet {self.trader.pubkey}" if isinstance(self.trader, LiveTrader) else ""
         await self.notifier.send(
-            f"memebot iniciado en modo {self.mode.upper()}{who} | saldo {wallet:.4f} SOL | "
+            f"Marín iniciada en modo {self.mode.upper()}{who} | saldo {wallet:.4f} SOL | "
             f"{len(self.state.positions)} posiciones abiertas"
         )
         src = self.cfg.sources
@@ -203,40 +206,89 @@ class Bot:
     # ------------------------------------------------------------- evaluate
 
     async def _evaluate_loop(self) -> None:
-        f = self.cfg.filters
         while True:
-            await asyncio.sleep(f.recheck_seconds)
-            now = time.time()
-            self.last_eval_at = now
-            self._update_buy_block()
-            for mint, cand in list(self.watchlist.items()):
-                if now - cand.first_seen > f.watch_minutes * 60:
-                    self.watchlist.pop(mint, None)
-            if not self.watchlist:
-                continue
+            await asyncio.sleep(self.cfg.filters.recheck_seconds)
             try:
-                snaps = await self.dex.snapshots(self.watchlist.keys())
+                await self.evaluate_once()
             except Exception:  # noqa: BLE001
-                log.exception("Error obteniendo datos de DexScreener")
-                continue
+                log.exception("Error evaluando candidatos")
 
-            ranked = []
-            for mint, snap in snaps.items():
-                cand = self.watchlist.get(mint)
-                if not cand:
-                    continue
-                ev = evaluate(snap, f, now)
-                self._update_radar(cand, snap, ev.score, ev.verdict.value, ev.reasons, now)
-                if ev.verdict is Verdict.REJECT:
-                    self.watchlist.pop(mint, None)
-                    self.rejected.add(mint)
-                elif ev.verdict is Verdict.BUY:
-                    stage = self.radar[mint]["stage"]
-                    if stage in self.state.buy_stages:
-                        ranked.append((ev.score, cand, snap, stage))
-            ranked.sort(key=lambda r: r[0], reverse=True)
-            for score, cand, snap, stage in ranked:
-                await self._try_buy(cand, snap, score, stage)
+    async def evaluate_once(self, now: float | None = None) -> None:
+        f = self.cfg.filters
+        now = now or time.time()
+        self.last_eval_at = now
+        self._update_buy_block()
+        for mint, cand in list(self.watchlist.items()):
+            # los tokens marcados siguen vigilados hasta que compran o expiran
+            if mint not in self.armed and now - cand.first_seen > f.watch_minutes * 60:
+                self.watchlist.pop(mint, None)
+        for mint, armed in list(self.armed.items()):
+            if now - armed.armed_at > f.arm_minutes * 60 or mint not in self.watchlist:
+                self.armed.pop(mint, None)
+        if not self.watchlist:
+            return
+        try:
+            snaps = await self.dex.snapshots(self.watchlist.keys())
+        except Exception:  # noqa: BLE001
+            log.exception("Error obteniendo datos de DexScreener")
+            return
+
+        ranked = []
+        for mint, snap in snaps.items():
+            cand = self.watchlist.get(mint)
+            if not cand:
+                continue
+            ev = evaluate(snap, f, now)
+            self._update_radar(cand, snap, ev.score, ev.verdict.value, ev.reasons, now)
+            if ev.verdict is Verdict.REJECT:
+                self.watchlist.pop(mint, None)
+                self.armed.pop(mint, None)
+                self.rejected.add(mint)
+                continue
+            stage = self.radar[mint]["stage"]
+            if stage not in self.state.buy_stages:
+                self.armed.pop(mint, None)
+                continue
+            if f.entry_mode == "momentum":
+                if ev.verdict is Verdict.BUY:
+                    ranked.append((ev.score, cand, snap, stage, f"score {ev.score}", None))
+                continue
+            armed = self.armed.get(mint)
+            if armed is None:
+                if ev.verdict is Verdict.BUY:
+                    self.armed[mint] = armed = Armed(
+                        mint,
+                        snap.symbol,
+                        snap.price_usd,
+                        now,
+                        ev.score,
+                        status=f"marcada, busca retroceso de -{f.pullback_min_pct:.0f}%",
+                    )
+                    log.info(
+                        "🎯 Marín marca %s (score %s): espera retroceso", snap.symbol, ev.score
+                    )
+                    self._radar_armed(mint, armed)
+                continue
+            action = check_pullback(armed, snap, f, now)
+            self._radar_armed(mint, armed)
+            if action == "drop":
+                log.info("Marín descarta %s: %s", armed.symbol, armed.status)
+                self.armed.pop(mint, None)
+                self.radar[mint]["armed"] = None
+            elif action == "buy":
+                ranked.append((armed.score, cand, snap, stage, armed.status, armed.last_dd))
+        ranked.sort(key=lambda r: r[0], reverse=True)
+        for score, cand, snap, stage, reason, pullback in ranked:
+            await self._try_buy(cand, snap, score, stage, reason=reason, pullback_pct=pullback)
+
+    def _radar_armed(self, mint: str, armed: Armed) -> None:
+        if mint in self.radar:
+            self.radar[mint]["armed"] = {
+                "dd": round(armed.last_dd, 1),
+                "status": armed.status,
+                "high": armed.high,
+                "since": armed.armed_at,
+            }
 
     def _update_radar(self, cand, snap, score, verdict, reasons, now) -> None:
         stage, progress = self.stage_of(snap, cand.source)
@@ -262,14 +314,23 @@ class Bot:
             "chg_h1": snap.change_h1,
             "age_min": snap.age_minutes(now),
             "t": now,
+            "armed": None,
         }
+        if cand.mint in self.armed:
+            self._radar_armed(cand.mint, self.armed[cand.mint])
         if len(self.radar) > MAX_RADAR:
             by_age = sorted(self.radar.values(), key=lambda r: r["t"])
             for old in by_age[: len(self.radar) - MAX_RADAR]:
                 self.radar.pop(old["mint"], None)
 
     async def _try_buy(
-        self, cand: Candidate, snap: TokenSnapshot, score: float, stage: str = ""
+        self,
+        cand: Candidate,
+        snap: TokenSnapshot,
+        score: float,
+        stage: str = "",
+        reason: str = "",
+        pullback_pct: float | None = None,
     ) -> None:
         wallet = await self.trader.wallet_sol()
         ok, why = risk.can_open(cand.mint, self.state, wallet, self.cfg.risk, live=self.cfg.live)
@@ -284,12 +345,14 @@ class Bot:
             )
             if safety.reasons != ["RugCheck no disponible"]:
                 self.watchlist.pop(cand.mint, None)
+                self.armed.pop(cand.mint, None)
                 self.rejected.add(cand.mint)
             return
 
         size = self.cfg.risk.trade_size_sol
         fill = await self.trader.buy(cand.mint, size, snap)
         self.watchlist.pop(cand.mint, None)
+        self.armed.pop(cand.mint, None)
         if not fill.ok:
             self.rejected.add(cand.mint)
             await self.notifier.send(f"Compra FALLIDA {snap.symbol}: {fill.error}")
@@ -308,6 +371,22 @@ class Bot:
             last_price_usd=snap.price_usd,
             signatures=[fill.signature],
             stage=stage,
+            entry_snapshot={
+                "score": score,
+                "mode": self.cfg.filters.entry_mode,
+                "pullback_pct": None if pullback_pct is None else round(pullback_pct, 1),
+                "mcap": snap.market_cap_usd,
+                "liq": snap.liquidity_usd if snap.liquidity_known else None,
+                "chg_m5": snap.change_m5,
+                "chg_h1": snap.change_h1,
+                "age_min": round(snap.age_minutes(), 1),
+                "buys_m5": snap.buys_m5,
+                "sells_m5": snap.sells_m5,
+                "ratio": round(snap.buy_sell_ratio_m5, 2),
+                "vol_m5": snap.volume_m5,
+                "vol_h1": snap.volume_h1,
+                "dex": snap.dex_id,
+            },
         )
         self.state.open_position(pos)
         self.state.record_price(pos.mint, pos.entry_time, snap.price_usd)
@@ -317,13 +396,14 @@ class Bot:
             fill.sol_amount,
             fill.token_amount,
             snap.price_usd,
-            f"score {score}",
+            reason or f"score {score}",
             fill.signature,
         )
         self.stats["bought"] += 1
         self._save()
         await self.notifier.send(
             f"🟢 COMPRA {snap.symbol} | {fill.sol_amount:.4f} SOL | score {score} | "
+            f"{reason + ' | ' if reason and pullback_pct is not None else ''}"
             f"mcap ${snap.market_cap_usd:,.0f} | liq ${snap.liquidity_usd:,.0f} | "
             f"etapa {STAGE_LABELS.get(stage, stage)} | fuente {cand.source}\n"
             f"{snap.url or 'https://dexscreener.com/solana/' + cand.mint}"

@@ -91,6 +91,8 @@ class Position:
     last_price_usd: float = 0.0
     signatures: list[str] = field(default_factory=list)
     stage: str = ""  # etapa al comprar: new / about / migrated
+    # como estaba la moneda al comprarla (para comparar ganadoras vs perdedoras)
+    entry_snapshot: dict = field(default_factory=dict)
 
     def multiple(self, price: float) -> float:
         return price / self.entry_price_usd if self.entry_price_usd else 0.0

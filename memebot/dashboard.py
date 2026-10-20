@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
+from .analysis import compare_winners_losers, mode_stats
 from .models import Position
 from .stages import STAGE_LABELS, STAGES
 from .trader import LiveTrader
@@ -166,6 +167,10 @@ def build_state(bot: Bot) -> dict[str, Any]:
         "radar": radar[:80],
         "trenches": build_trenches(bot),
         "stage_stats": stage_stats(closed_all),
+        "mode_stats": mode_stats(closed_all),
+        "compare": compare_winners_losers(closed_all),
+        "armed_count": len(bot.armed),
+        "entry_mode": bot.cfg.filters.entry_mode,
         "buy_stages": bot.state.buy_stages,
         "buy_block": bot.buy_block,
         "last_eval_at": bot.last_eval_at,
