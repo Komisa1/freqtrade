@@ -21,7 +21,12 @@ FEATURES: list[tuple[str, str]] = [
     ("age_min", "Edad (min)"),
     ("ratio", "Compras/ventas 5 min"),
 ]
-MODE_LABELS = {"pullback": "Retroceso (v2)", "momentum": "Momentum", "": "Sin datos (v1)"}
+MODE_LABELS = {
+    "pullback": "Retroceso (v2)",
+    "pump": "Pump con excepcion",
+    "momentum": "Momentum",
+    "": "Sin datos (v1)",
+}
 
 
 def group_stats(

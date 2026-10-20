@@ -49,6 +49,20 @@ class FilterConfig:
     pullback_max_pct: float = 35
     pullback_min_buy_sell_ratio: float = 0.9
     arm_minutes: float = 20  # si en este tiempo no retrocede, se descarta
+    # Excepcion de pump (solo en modo pullback): una moneda que ya subio mas de
+    # max_price_change_h1_pct puede entrar si pasa revisiones mas estrictas, y entonces
+    # pide un retroceso mas profundo. Se mide aparte en el reporte ("Pump con excepcion").
+    pump_exception: bool = True
+    pump_max_change_h1_pct: float = 1000  # arriba de esto ni con excepcion
+    pump_min_liquidity_usd: float = 40_000
+    pump_min_market_cap_usd: float = 100_000
+    pump_min_buy_sell_ratio: float = 1.3
+    pump_min_txns_m5: int = 60
+    pump_min_score: float = (
+        60  # ojo: un pump no suma los puntos de "tendencia 1h", ya es mas estricto
+    )
+    pump_pullback_min_pct: float = 20
+    pump_pullback_max_pct: float = 45
     # re-evaluacion de tokens que todavia no cumplen (p. ej. muy nuevos)
     watch_minutes: float = 30
     recheck_seconds: float = 20
@@ -208,6 +222,10 @@ def validate(cfg: Config) -> None:
         errors.append("filters.entry_mode debe ser 'pullback' o 'momentum'")
     if not 0 < f.pullback_min_pct < f.pullback_max_pct < 100:
         errors.append("filters: se necesita 0 < pullback_min_pct < pullback_max_pct < 100")
+    if not 0 < f.pump_pullback_min_pct < f.pump_pullback_max_pct < 100:
+        errors.append(
+            "filters: se necesita 0 < pump_pullback_min_pct < pump_pullback_max_pct < 100"
+        )
     if cfg.live and not cfg.private_key:
         errors.append("Modo live requiere SOLANA_PRIVATE_KEY en el archivo .env")
     if errors:

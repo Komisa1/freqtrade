@@ -45,7 +45,38 @@ def test_momentum_mode_does_not_chase_fast_candles():
     s = snap(change_m5=40)
     assert evaluate(s, FilterConfig(entry_mode="momentum")).verdict is Verdict.WAIT
     assert evaluate(s, FilterConfig(entry_mode="pullback")).verdict is Verdict.BUY
-    assert evaluate(snap(change_h1=200), FilterConfig()).verdict is Verdict.WAIT  # max 150%
+    no_exc = FilterConfig(pump_exception=False)
+    assert evaluate(snap(change_h1=200), no_exc).verdict is Verdict.WAIT  # max 150%
+
+
+def test_pump_exception():
+    cfg = FilterConfig()
+    healthy = snap(change_h1=300, liquidity_usd=60_000, market_cap_usd=400_000)
+    ev = evaluate(healthy, cfg)
+    assert ev.verdict is Verdict.BUY and ev.pump
+    assert any("excepcion de pump" in r for r in ev.reasons)
+    # pump con poca liquidez, pocos compradores o demasiado vertical: no pasa
+    assert evaluate(snap(change_h1=300, liquidity_usd=20_000), cfg).verdict is Verdict.WAIT
+    weak = snap(change_h1=300, liquidity_usd=60_000, buys_m5=100, sells_m5=90)
+    assert evaluate(weak, cfg).verdict is Verdict.WAIT
+    assert evaluate(snap(change_h1=1500, liquidity_usd=60_000), cfg).verdict is Verdict.WAIT
+    assert not evaluate(snap(change_h1=80), cfg).pump  # una normal no es pump
+    # en modo momentum no hay excepcion
+    mom = FilterConfig(entry_mode="momentum")
+    assert (
+        evaluate(snap(change_h1=300, liquidity_usd=60_000, change_m5=10), mom).verdict
+        is Verdict.WAIT
+    )
+
+
+def test_pump_needs_deeper_pullback():
+    cfg = FilterConfig()
+    a = Armed("M", "X", high=1.0, armed_at=NOW, score=70, pump=True)
+    assert check_pullback(a, snap(price_usd=0.85), cfg, NOW) == "wait"  # -15% no basta
+    assert check_pullback(a, snap(price_usd=0.75), cfg, NOW) == "buy"  # -25%
+    b = Armed("M", "X", high=1.0, armed_at=NOW, score=70, pump=True)
+    assert check_pullback(b, snap(price_usd=0.6), cfg, NOW) == "buy"  # -40% ok para un pump
+    assert check_pullback(b, snap(price_usd=0.5), cfg, NOW) == "drop"  # -50% se desplomo
 
 
 def test_breakeven_after_25pct():
@@ -145,3 +176,36 @@ def test_compare_winners_losers():
     assert row["win"] == 40 and row["loss"] == 220
     labels = {s["key"]: s for s in mode_stats([w, lo, v1])}
     assert labels["pullback"]["trades"] == 2 and labels[""]["trades"] == 1
+
+
+async def test_pump_trade_is_tagged(tmp_path, monkeypatch):
+    async with aiohttp.ClientSession() as session:
+        bot = Bot(Config(data_dir=str(tmp_path)), session)
+
+        async def ok(mint):
+            return SafetyResult(ok=True)
+
+        prices = iter([1.0, 0.75])
+
+        async def snaps(mints):
+            p = next(prices)
+            return {
+                "P": snap(
+                    mint="P",
+                    price_usd=p,
+                    change_h1=400,
+                    liquidity_usd=80_000,
+                    market_cap_usd=500_000,
+                    volume_h1=400_000,
+                )
+            }
+
+        monkeypatch.setattr(bot.rugcheck, "check", ok)
+        monkeypatch.setattr(bot.dex, "snapshots", snaps)
+        bot.watchlist["P"] = Candidate(mint="P", source="test")
+        await bot.evaluate_once(NOW)
+        assert bot.armed["P"].pump and bot.radar["P"]["armed"]["pump"]
+        await bot.evaluate_once(NOW + 20)
+        pos = bot.state.positions["P"]
+        assert pos.entry_snapshot["mode"] == "pump"
+        assert mode_stats([pos])[0]["label"] == "Pump con excepcion"
