@@ -196,3 +196,37 @@ def validate(cfg: Config) -> None:
         errors.append("Modo live requiere SOLANA_PRIVATE_KEY en el archivo .env")
     if errors:
         raise ValueError("Configuracion invalida:\n  - " + "\n  - ".join(errors))
+
+
+def set_setting(config_path: Path, key: str, raw_value: str) -> tuple[Any, Any]:
+    """Cambia un ajuste de config.json, p. ej. ("risk.max_open_positions", "4").
+    Devuelve (valor_anterior, valor_nuevo). Si el valor no es valido, no cambia nada."""
+    section, _, name = key.partition(".")
+    if not name:
+        section, name = "", section
+    cls = _SECTIONS.get(section, Config) if section else Config
+    if section and section not in _SECTIONS:
+        raise ValueError(f"Seccion desconocida '{section}'. Opciones: {sorted(_SECTIONS)}")
+    known = {f.name for f in fields(cls)} - {"private_key", "telegram_token"}
+    if name not in known or name in _SECTIONS:
+        raise ValueError(f"Ajuste desconocido '{key}'")
+    try:
+        value = json.loads(raw_value)
+    except ValueError:
+        value = raw_value
+    original = config_path.read_text(encoding="utf-8") if config_path.exists() else None
+    data = json.loads(original) if original else {}
+    target = data.setdefault(section, {}) if section else data
+    default = getattr(cls(), name)
+    old = target.get(name, default)
+    target[name] = value
+    config_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    try:
+        load_config(config_path, env_file=None)
+    except Exception:
+        if original is None:
+            config_path.unlink()
+        else:
+            config_path.write_text(original, encoding="utf-8")
+        raise
+    return old, value

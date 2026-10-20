@@ -100,3 +100,22 @@ def test_example_config_loads():
 
     cfg = load_config(Path(__file__).parents[1] / "config.example.json", env_file=None)
     assert cfg.live is False
+
+
+def test_set_setting(tmp_path):
+    from memebot.config import set_setting
+
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"_nota": "x", "risk": {"trade_size_sol": 0.05}}))
+    assert set_setting(p, "risk.max_open_positions", "4") == (3, 4)
+    assert set_setting(p, "live", "false") == (False, False)
+    cfg = load_config(p, env_file=None)
+    assert cfg.risk.max_open_positions == 4 and cfg.risk.trade_size_sol == 0.05
+    before = p.read_text()
+    with pytest.raises(ValueError):
+        set_setting(p, "risk.max_open_positions", "0")  # invalido -> no cambia
+    with pytest.raises(ValueError):
+        set_setting(p, "risk.no_existe", "1")
+    with pytest.raises(ValueError):
+        set_setting(p, "private_key", "abc")
+    assert p.read_text() == before
