@@ -1,0 +1,841 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: "Yuji Syuku"; src: url("fonts/YujiSyuku-subset.ttf") format("truetype"); }
+  html, body { margin: 0; padding: 0; background: #000; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<script>
+// Presentación "Japón en Navidad" para el bucle de render headless.
+// Todo se dibuja en un lienzo lógico de 1920x1080 y se escala al tamaño de salida.
+// El tiempo lo dicta render.mjs: nada de rAF, Date.now() ni aleatorios sin semilla.
+
+const BW = 1920, BH = 1080;
+const HEAD = '"Inter Display", "Inter", "Noto Color Emoji", sans-serif';
+const BODY = '"Inter", "Noto Color Emoji", sans-serif';
+const BRUSH = '"Yuji Syuku", "IPAGothic", serif';
+const RED = '#e60033', GOLD = '#ffc861';
+const XF = 0.6; // duración del fundido entre escenas (s)
+
+// ---------------------------------------------------------------- utilidades
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const prog = (t, start, dur) => clamp((t - start) / dur);
+const easeOut = (t) => 1 - Math.pow(1 - clamp(t), 3);
+const easeInOut = (t) => { t = clamp(t); return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const easeBack = (t) => { t = clamp(t); const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+
+function rng(seed) {
+  return () => {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function text(c, str, x, y, o = {}) {
+  c.save();
+  c.globalAlpha *= o.alpha ?? 1;
+  c.font = o.font;
+  c.fillStyle = o.color || '#fff';
+  c.textAlign = o.align || 'left';
+  c.textBaseline = o.baseline || 'alphabetic';
+  c.letterSpacing = `${o.spacing || 0}px`;
+  if (o.shadow) { c.shadowColor = o.shadow; c.shadowBlur = o.blur ?? 24; }
+  c.fillText(str, x, y);
+  c.restore();
+}
+
+function wrapLines(c, str, maxW, font) {
+  c.save(); c.font = font;
+  const lines = []; let cur = '';
+  for (const w of str.split(' ')) {
+    const test = cur ? `${cur} ${w}` : w;
+    if (c.measureText(test).width > maxW && cur) { lines.push(cur); cur = w; } else cur = test;
+  }
+  if (cur) lines.push(cur);
+  c.restore();
+  return lines;
+}
+
+function rgbMix(a, b, t) {
+  return `rgb(${a.map((v, i) => Math.round(lerp(v, b[i], t))).join(',')})`;
+}
+
+// ---------------------------------------------------------------- dibujo base
+function sky(c, stops) {
+  const g = c.createLinearGradient(0, 0, 0, BH);
+  for (const [o, col] of stops) g.addColorStop(o, col);
+  c.fillStyle = g; c.fillRect(0, 0, BW, BH);
+}
+
+function stars(c, t, seed, n, alpha = 1) {
+  const r = rng(seed);
+  c.save(); c.fillStyle = '#fff';
+  for (let i = 0; i < n; i++) {
+    const x = r() * BW, y = r() * BH * 0.65, s = r() * 2 + 0.4, ph = r() * 6.28;
+    c.globalAlpha = alpha * (0.45 + 0.55 * Math.abs(Math.sin(t * 1.7 + ph)));
+    c.fillRect(x, y, s, s);
+  }
+  c.restore();
+}
+
+function glow(c, x, y, r, color) {
+  const g = c.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, color); g.addColorStop(1, 'rgba(0,0,0,0)');
+  c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2);
+}
+
+function sun(c, x, y, r, col = '#e8202a') {
+  glow(c, x, y, r * 3.2, 'rgba(255,90,60,0.5)');
+  c.fillStyle = col; c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
+}
+
+function fujiPath(c, cx, by, hw, h) {
+  c.beginPath();
+  c.moveTo(cx - hw, by);
+  c.bezierCurveTo(cx - hw * 0.55, by - h * 0.3, cx - hw * 0.28, by - h * 0.82, cx - hw * 0.1, by - h);
+  c.lineTo(cx - hw * 0.03, by - h * 0.985);
+  c.lineTo(cx + hw * 0.04, by - h);
+  c.lineTo(cx + hw * 0.1, by - h * 0.99);
+  c.bezierCurveTo(cx + hw * 0.28, by - h * 0.82, cx + hw * 0.55, by - h * 0.3, cx + hw, by);
+  c.closePath();
+}
+
+function drawFuji(c, cx, by, hw, h, top = '#4b5c92', bot = '#141a35', snow = '#f4f7ff') {
+  c.save();
+  fujiPath(c, cx, by, hw, h);
+  const g = c.createLinearGradient(0, by - h, 0, by);
+  g.addColorStop(0, top); g.addColorStop(1, bot);
+  c.fillStyle = g; c.fill(); c.clip();
+  const capY = by - h * 0.6, n = 16;
+  c.beginPath();
+  c.moveTo(cx - hw, by - h * 1.1); c.lineTo(cx + hw, by - h * 1.1); c.lineTo(cx + hw, capY);
+  for (let i = n; i >= 0; i--) {
+    const x = cx - hw + (2 * hw) * i / n;
+    c.lineTo(x, capY + (i % 2 ? h * 0.1 : -h * 0.02) + Math.sin(i * 1.7) * h * 0.03);
+  }
+  c.closePath();
+  const sg = c.createLinearGradient(cx - hw * 0.3, 0, cx + hw * 0.3, 0);
+  sg.addColorStop(0, snow); sg.addColorStop(1, '#c9d6f0');
+  c.fillStyle = sg; c.fill();
+  c.restore();
+}
+
+function torii(c, x, by, s, col = '#e0301e', dark = '#1a0d0d') {
+  const pw = s * 0.075, px = s * 0.36, top = by - s;
+  c.fillStyle = col;
+  c.fillRect(x - px - pw / 2, top + s * 0.08, pw, s * 0.92);
+  c.fillRect(x + px - pw / 2, top + s * 0.08, pw, s * 0.92);
+  c.fillRect(x - s * 0.5, top + s * 0.25, s, s * 0.06);
+  c.fillRect(x - s * 0.03, top + s * 0.1, s * 0.06, s * 0.15);
+  c.beginPath();
+  c.moveTo(x - s * 0.66, top - s * 0.05);
+  c.quadraticCurveTo(x, top + s * 0.06, x + s * 0.66, top - s * 0.05);
+  c.lineTo(x + s * 0.6, top + s * 0.1);
+  c.quadraticCurveTo(x, top + s * 0.16, x - s * 0.6, top + s * 0.1);
+  c.closePath(); c.fill();
+  c.fillStyle = dark;
+  c.beginPath();
+  c.moveTo(x - s * 0.68, top - s * 0.09);
+  c.quadraticCurveTo(x, top + s * 0.01, x + s * 0.68, top - s * 0.09);
+  c.lineTo(x + s * 0.66, top - s * 0.03);
+  c.quadraticCurveTo(x, top + s * 0.07, x - s * 0.66, top - s * 0.03);
+  c.closePath(); c.fill();
+  c.fillRect(x - px - pw * 0.7, by - s * 0.05, pw * 1.4, s * 0.05);
+  c.fillRect(x + px - pw * 0.7, by - s * 0.05, pw * 1.4, s * 0.05);
+}
+
+function skyline(c, t, seed, baseY, { neon = true, color = '#0d0f1f', windows = true } = {}) {
+  const r = rng(seed);
+  let x = -20;
+  while (x < BW + 20) {
+    const w = 60 + r() * 110, h = 140 + r() * 360, by = baseY - h;
+    c.fillStyle = color; c.fillRect(x, by, w, h);
+    const cols = Math.floor((w - 8) / 18), rows = Math.floor((h - 10) / 26);
+    for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) {
+      const v = r();
+      if (windows && v < 0.4) {
+        c.fillStyle = `rgba(255,${190 + Math.floor(v * 150)},140,${0.35 + 0.3 * Math.abs(Math.sin(t * 0.8 + v * 90))})`;
+        c.fillRect(x + 8 + i * 18, by + 12 + j * 26, 8, 12);
+      }
+    }
+    if (neon && r() < 0.55) {
+      const hue = [330, 190, 45, 285][Math.floor(r() * 4)];
+      const nh = 40 + r() * 110, ny = by + 20 + r() * Math.max(10, h * 0.4);
+      c.save();
+      c.shadowColor = `hsl(${hue},100%,60%)`; c.shadowBlur = 24;
+      c.fillStyle = `hsla(${hue},100%,65%,${0.75 + 0.25 * Math.sin(t * 6 + x)})`;
+      c.fillRect(x + w * 0.3, ny, Math.max(14, w * 0.18), nh);
+      c.restore();
+    }
+    x += w + r() * 6;
+  }
+}
+
+function tokyoTower(c, x, by, h, t) {
+  const hw = (f) => h * (0.2 * Math.pow(1 - f, 2.2) + 0.012);
+  glow(c, x, by - h * 0.45, h * 0.7, 'rgba(255,90,50,0.25)');
+  c.save();
+  c.beginPath();
+  c.moveTo(x - hw(0), by);
+  for (let i = 1; i <= 40; i++) { const f = i / 40; c.lineTo(x - hw(f), by - h * f); }
+  for (let i = 40; i >= 0; i--) { const f = i / 40; c.lineTo(x + hw(f), by - h * f); }
+  c.closePath();
+  c.fillStyle = 'rgba(255,74,42,0.22)'; c.fill();
+  c.strokeStyle = '#ff5a36'; c.lineWidth = 5; c.stroke();
+  c.lineWidth = 2; c.strokeStyle = 'rgba(255,150,110,0.8)';
+  for (let i = 0; i < 16; i++) {
+    const f0 = i / 16 * 0.92, f1 = (i + 1) / 16 * 0.92;
+    c.beginPath();
+    c.moveTo(x - hw(f0), by - h * f0); c.lineTo(x + hw(f1), by - h * f1);
+    c.moveTo(x + hw(f0), by - h * f0); c.lineTo(x - hw(f1), by - h * f1);
+    c.stroke();
+  }
+  for (const [f, hh] of [[0.33, 0.05], [0.6, 0.03]]) {
+    const w = hw(f) * 2.6;
+    c.fillStyle = '#fff3dc'; c.fillRect(x - w / 2, by - h * f - h * hh, w, h * hh);
+    c.fillStyle = 'rgba(255,200,90,0.95)'; c.fillRect(x - w / 2 + 6, by - h * f - h * hh * 0.65, w - 12, h * hh * 0.3);
+  }
+  c.fillStyle = `rgba(255,40,40,${0.5 + 0.5 * Math.sin(t * 4)})`;
+  c.beginPath(); c.arc(x, by - h, 7, 0, Math.PI * 2); c.fill();
+  c.restore();
+}
+
+function garland(c, t, x0, y0, x1, y1, sag, seed) {
+  const n = 42, cols = ['#ff3b3b', '#ffd43b', '#3bff7a', '#3bb4ff', '#ff7af0'];
+  const pt = (p) => [lerp(x0, x1, p), lerp(y0, y1, p) + sag * 4 * p * (1 - p)];
+  c.save();
+  c.strokeStyle = 'rgba(20,20,20,0.9)'; c.lineWidth = 2;
+  c.beginPath();
+  for (let i = 0; i <= 60; i++) { const [x, y] = pt(i / 60); i ? c.lineTo(x, y) : c.moveTo(x, y); }
+  c.stroke();
+  c.globalCompositeOperation = 'lighter';
+  for (let i = 0; i <= n; i++) {
+    const [x, y] = pt(i / n);
+    const col = cols[(i + seed) % cols.length];
+    const b = 0.35 + 0.65 * Math.abs(Math.sin(t * 2.4 + i * 1.3 + seed));
+    c.globalAlpha = b * 0.6; glow(c, x, y + 8, 26, col);
+    c.globalAlpha = 0.5 + b * 0.5; c.fillStyle = col;
+    c.beginPath(); c.arc(x, y + 8, 5, 0, Math.PI * 2); c.fill();
+  }
+  c.restore();
+}
+
+function lantern(c, x, y, w, h, t, label) {
+  c.save();
+  c.translate(x, y - h / 2);
+  c.rotate(Math.sin(t * 1.1) * 0.025);
+  c.translate(0, h / 2);
+  glow(c, 0, 0, w * 1.3, 'rgba(255,80,40,0.35)');
+  const g = c.createRadialGradient(-w * 0.15, -h * 0.1, w * 0.1, 0, 0, w * 0.7);
+  g.addColorStop(0, '#ff5a40'); g.addColorStop(1, '#a00c12');
+  c.fillStyle = g;
+  c.beginPath(); c.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = 'rgba(60,0,0,0.35)'; c.lineWidth = 3;
+  for (let i = -4; i <= 4; i++) {
+    const yy = i * h / 10, hw = w / 2 * Math.sqrt(1 - (yy / (h / 2)) ** 2);
+    c.beginPath(); c.moveTo(-hw, yy); c.lineTo(hw, yy); c.stroke();
+  }
+  c.fillStyle = '#1b1b1b';
+  c.fillRect(-w * 0.32, -h / 2 - h * 0.04, w * 0.64, h * 0.09);
+  c.fillRect(-w * 0.32, h / 2 - h * 0.05, w * 0.64, h * 0.09);
+  text(c, label, 0, h * 0.04, { font: `${h * 0.3}px ${BRUSH}`, color: '#1b0606', align: 'center', baseline: 'middle' });
+  c.restore();
+}
+
+function cloud(c, x, y, s, alpha) {
+  c.save(); c.globalAlpha = alpha;
+  const g = c.createLinearGradient(0, y - s, 0, y + s);
+  g.addColorStop(0, '#ffffff'); g.addColorStop(1, '#dfe8f5');
+  c.fillStyle = g;
+  c.beginPath();
+  for (const [dx, dy, r] of [[0, 0, 1], [0.9, 0.15, 0.75], [-0.9, 0.2, 0.7], [0.4, -0.45, 0.7], [-0.4, -0.35, 0.6], [1.6, 0.3, 0.5], [-1.6, 0.35, 0.45]]) {
+    c.moveTo(x + dx * s + r * s, y + dy * s);
+    c.arc(x + dx * s, y + dy * s, r * s, 0, Math.PI * 2);
+  }
+  c.fill('nonzero');
+  c.restore();
+}
+
+function clouds(c, t, seed, n, yMin, yMax, speed, sMin, sMax, alpha) {
+  const r = rng(seed);
+  const span = BW + 800;
+  for (let i = 0; i < n; i++) {
+    const x0 = r() * span, y = lerp(yMin, yMax, r()), s = lerp(sMin, sMax, r());
+    const x = ((x0 - speed * t) % span + span) % span - 400;
+    cloud(c, x, y, s, alpha);
+  }
+}
+
+function emoji(c, ch, x, y, size, angle = 0) {
+  c.save(); c.translate(x, y); c.rotate(angle);
+  c.font = `${size}px "Noto Color Emoji"`;
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillText(ch, 0, 0);
+  c.restore();
+}
+
+// El emoji ✈️ apunta hacia arriba a la derecha (-45°); lo giramos según la dirección.
+function planeAt(c, fx, fy, p, size, trail = 0.25) {
+  const d = 0.002;
+  const ang = Math.atan2(fy(p + d) - fy(p - d), fx(p + d) - fx(p - d));
+  if (trail > 0) {
+    c.save(); c.lineCap = 'round';
+    const steps = 30, p0 = Math.max(0, p - trail);
+    for (let i = 0; i < steps; i++) {
+      const a = lerp(p0, p, i / steps), b = lerp(p0, p, (i + 1) / steps);
+      c.strokeStyle = `rgba(255,255,255,${0.6 * (i / steps)})`;
+      c.lineWidth = 2 + 4 * (i / steps);
+      c.beginPath(); c.moveTo(fx(a), fy(a)); c.lineTo(fx(b), fy(b)); c.stroke();
+    }
+    c.restore();
+  }
+  emoji(c, '✈️', fx(p), fy(p), size, ang + Math.PI / 4);
+}
+
+function bell(c, x, topY, s, swing) {
+  c.save(); c.translate(x, topY); c.rotate(swing);
+  c.fillStyle = '#2b1d12'; c.fillRect(-s * 0.05, -s * 0.12, s * 0.1, s * 0.14);
+  const g = c.createLinearGradient(-s * 0.4, 0, s * 0.4, 0);
+  g.addColorStop(0, '#2c3a31'); g.addColorStop(0.42, '#86a08c'); g.addColorStop(1, '#1d2722');
+  c.fillStyle = g;
+  c.beginPath();
+  c.moveTo(-s * 0.3, 0);
+  c.quadraticCurveTo(-s * 0.37, s * 0.04, -s * 0.37, s * 0.25);
+  c.lineTo(-s * 0.4, s * 0.95); c.lineTo(s * 0.4, s * 0.95); c.lineTo(s * 0.37, s * 0.25);
+  c.quadraticCurveTo(s * 0.37, s * 0.04, s * 0.3, 0);
+  c.closePath(); c.fill();
+  c.strokeStyle = 'rgba(15,25,20,0.65)'; c.lineWidth = s * 0.014;
+  for (const f of [0.3, 0.62, 0.86]) { c.beginPath(); c.moveTo(-s * 0.39, s * f); c.lineTo(s * 0.39, s * f); c.stroke(); }
+  c.beginPath(); c.moveTo(0, s * 0.3); c.lineTo(0, s * 0.62); c.stroke();
+  c.fillStyle = 'rgba(25,35,30,0.7)';
+  for (let row = 0; row < 3; row++) for (let col = 0; col < 4; col++) {
+    c.beginPath(); c.arc(-s * 0.3 + col * s * 0.08, s * 0.08 + row * s * 0.065, s * 0.016, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(s * 0.06 + col * s * 0.08, s * 0.08 + row * s * 0.065, s * 0.016, 0, Math.PI * 2); c.fill();
+  }
+  c.beginPath(); c.arc(-s * 0.2, s * 0.74, s * 0.05, 0, Math.PI * 2); c.stroke();
+  c.restore();
+}
+
+function fireworks(c, t, bursts) {
+  c.save(); c.globalCompositeOperation = 'lighter';
+  for (const b of bursts) {
+    const dt = t - b.t;
+    if (dt > -0.7 && dt < 0) { // cohete subiendo
+      const p = easeOut((dt + 0.7) / 0.7);
+      const y = lerp(BH, b.y, p);
+      c.fillStyle = 'rgba(255,230,180,0.9)';
+      c.beginPath(); c.arc(b.x, y, 3, 0, Math.PI * 2); c.fill();
+      continue;
+    }
+    if (dt < 0 || dt > 2.4) continue;
+    const r = rng(b.seed), n = 80, fade = 1 - dt / 2.4;
+    if (dt < 0.18) { c.globalAlpha = 1 - dt / 0.18; glow(c, b.x, b.y, 220 * b.s, `hsla(${b.hue},100%,70%,0.6)`); c.globalAlpha = 1; }
+    for (let i = 0; i < n; i++) {
+      const a = i / n * Math.PI * 2 + r() * 0.1, v = (230 + r() * 120) * b.s;
+      const d = v * (1 - Math.exp(-dt * 2.4));
+      const x = b.x + Math.cos(a) * d, y = b.y + Math.sin(a) * d + 45 * dt * dt;
+      c.fillStyle = `hsla(${b.hue + r() * 40},100%,${62 + r() * 20}%,${fade})`;
+      c.beginPath(); c.arc(x, y, 3.2 * b.s * (0.5 + fade * 0.7), 0, Math.PI * 2); c.fill();
+    }
+  }
+  c.restore();
+}
+
+function snow(c, t, alpha) {
+  const r = rng(777);
+  c.save(); c.fillStyle = '#fff';
+  for (let i = 0; i < 170; i++) {
+    const x0 = r() * BW, y0 = r() * BH, sp = 40 + r() * 70, sz = 1.2 + r() * 3.2, ph = r() * 6.28, a = 0.35 + r() * 0.5;
+    const x = ((x0 + Math.sin(t * 0.9 + ph) * 26 + t * 12) % BW + BW) % BW;
+    const y = (y0 + t * sp) % (BH + 20) - 10;
+    c.globalAlpha = alpha * a;
+    c.beginPath(); c.arc(x, y, sz, 0, Math.PI * 2); c.fill();
+  }
+  c.restore();
+}
+
+function vignette(c) {
+  const g = c.createRadialGradient(BW / 2, BH / 2, BH * 0.45, BW / 2, BH / 2, BH * 1.05);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.5)');
+  c.fillStyle = g; c.fillRect(0, 0, BW, BH);
+}
+
+// ------------------------------------------------------------- fondos por día
+const BG = {
+  depart(c, lt, t) {
+    sky(c, [[0, '#050816'], [0.7, '#1a1f4a'], [1, '#3d2a5c']]);
+    stars(c, t, 5, 220);
+    glow(c, 1100, 1080, 900, 'rgba(255,170,90,0.25)');
+    skyline(c, t, 11, 1080, { neon: false, color: '#0a0c1c' });
+    const p = easeInOut(prog(lt, 0, 3.5));
+    planeAt(c, (q) => 700 + 820 * q, (q) => 1000 - 860 * Math.pow(q, 1.25), p, 120, 0.35);
+  },
+  tokyo(c, lt, t) {
+    sky(c, [[0, '#090418'], [0.6, '#241040'], [1, '#4a1a4a']]);
+    stars(c, t, 9, 90, 0.6);
+    tokyoTower(c, 1320, 1000, 700, t);
+    skyline(c, t, 21, 1080);
+    garland(c, t, -20, 40, 1940, 70, 110, 0);
+    garland(c, t, -20, 150, 1940, 120, 80, 2);
+  },
+  asakusa(c, lt, t) {
+    sky(c, [[0, '#1a0505'], [1, '#4a0f0c']]);
+    glow(c, 1310, 560, 700, 'rgba(255,90,40,0.25)');
+    c.fillStyle = '#5c0d0d'; c.fillRect(860, 0, 80, BH); c.fillRect(1680, 0, 80, BH);
+    c.fillStyle = '#1c0a08'; c.fillRect(780, 0, 1060, 96);
+    c.fillStyle = '#3a0808'; c.fillRect(780, 96, 1060, 18);
+    c.strokeStyle = '#2a1a10'; c.lineWidth = 6;
+    c.beginPath(); c.moveTo(1310, 114); c.lineTo(1310, 300); c.stroke();
+    lantern(c, 1310, 590, 440, 580, t, '雷門');
+    const fg = c.createLinearGradient(0, 900, 0, BH);
+    fg.addColorStop(0, 'rgba(0,0,0,0)'); fg.addColorStop(1, 'rgba(0,0,0,0.6)');
+    c.fillStyle = fg; c.fillRect(0, 900, BW, 180);
+  },
+  fuji(c, lt, t) {
+    sky(c, [[0, '#5f9ce6'], [0.68, '#d3e8ff'], [0.7, '#e9f3ff']]);
+    glow(c, 1650, 180, 380, 'rgba(255,250,220,0.6)');
+    clouds(c, t, 31, 6, 120, 330, 18, 40, 70, 0.75);
+    const cx = 1250 - lt * 10;
+    drawFuji(c, cx, 760, 720, 440, '#5a74b0', '#2c3d6c');
+    c.fillStyle = '#23402e';
+    c.beginPath(); c.moveTo(0, 760);
+    for (let x = 0; x <= BW; x += 40) c.lineTo(x, 740 - 18 * Math.sin(x * 0.006) - 10 * Math.sin(x * 0.017));
+    c.lineTo(BW, 760); c.closePath(); c.fill();
+    const lg = c.createLinearGradient(0, 760, 0, BH);
+    lg.addColorStop(0, '#86afdc'); lg.addColorStop(1, '#22406b');
+    c.fillStyle = lg; c.fillRect(0, 760, BW, 320);
+    c.save();
+    c.beginPath(); c.rect(0, 760, BW, 320); c.clip();
+    c.translate(0, 1520); c.scale(1, -1); c.globalAlpha = 0.35;
+    drawFuji(c, cx, 760, 720, 440, '#5a74b0', '#2c3d6c');
+    c.restore();
+    const r = rng(41);
+    c.fillStyle = 'rgba(255,255,255,0.18)';
+    for (let i = 0; i < 40; i++) {
+      const y = 770 + r() * 300, w = 60 + r() * 200;
+      const x = ((r() * BW + t * (10 + r() * 20)) % (BW + 300)) - 150;
+      c.fillRect(x, y, w, 2);
+    }
+  },
+  kyoto(c, lt, t) {
+    sky(c, [[0, '#06140b'], [1, '#1c2e14']]);
+    const vx = 1250, vy = 520;
+    glow(c, vx, vy, 500, 'rgba(255,190,120,0.35)');
+    c.fillStyle = '#3a2f1e';
+    c.beginPath(); c.moveTo(vx - 30, vy + 70); c.lineTo(vx + 30, vy + 70); c.lineTo(vx + 620, BH); c.lineTo(vx - 620, BH); c.closePath(); c.fill();
+    const n = 15, ph = (lt * 1.1) % 1;
+    for (let k = n - 1; k >= 0; k--) {
+      const z = k + 1 - ph;
+      const sc = 900 / (z * 0.85 + 0.55);
+      const fog = clamp(z / n);
+      torii(c, vx, vy + 70 + sc * 0.6, sc, rgbMix([226, 52, 30], [50, 34, 22], fog), rgbMix([30, 14, 12], [30, 24, 18], fog));
+    }
+  },
+  bamboo(c, lt, t) {
+    sky(c, [[0, '#e3f5c8'], [0.5, '#8dbb6a'], [1, '#203f1c']]);
+    c.save(); c.globalAlpha = 0.18; c.fillStyle = '#fffbe0';
+    for (let i = 0; i < 5; i++) {
+      const x = 900 + i * 220 + Math.sin(t * 0.3 + i) * 30;
+      c.beginPath(); c.moveTo(x, 0); c.lineTo(x + 90, 0); c.lineTo(x - 260, BH); c.lineTo(x - 420, BH); c.closePath(); c.fill();
+    }
+    c.restore();
+    glow(c, 1450, 650, 380, 'rgba(255,215,90,0.35)'); // brillo del Pabellón Dorado
+    for (let L = 0; L < 3; L++) {
+      const r = rng(100 + L), count = 16 - L * 3;
+      for (let i = 0; i < count; i++) {
+        const x = r() * BW, w = (12 + r() * 14) * (1 + L * 0.9);
+        const sway = Math.sin(t * 0.8 + x * 0.01) * (5 + L * 6);
+        const light = [62, 44, 28][L];
+        const g = c.createLinearGradient(x, 0, x + w, 0);
+        g.addColorStop(0, `hsl(95,45%,${light - 10}%)`); g.addColorStop(0.4, `hsl(90,50%,${light + 8}%)`); g.addColorStop(1, `hsl(100,45%,${light - 14}%)`);
+        c.fillStyle = g;
+        c.beginPath(); c.moveTo(x + sway, 0); c.lineTo(x + sway + w, 0); c.lineTo(x + w, BH); c.lineTo(x, BH); c.closePath(); c.fill();
+        c.fillStyle = `hsla(100,40%,${light - 22}%,0.8)`;
+        for (let y = 80 + r() * 120; y < BH; y += 150 + r() * 60) {
+          const s = sway * (1 - y / BH);
+          c.fillRect(x + s - 1, y, w + 2, 4 + L);
+        }
+      }
+    }
+  },
+  bell(c, lt, t) {
+    sky(c, [[0, '#03040c'], [1, '#141d38']]);
+    stars(c, t, 13, 160, 0.9);
+    glow(c, 800, 130, 200, 'rgba(230,235,255,0.35)');
+    c.fillStyle = '#eef1ff'; c.beginPath(); c.arc(800, 130, 50, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#24160d'; c.fillRect(1000, 60, 640, 46);
+    c.fillRect(1030, 106, 34, 974); c.fillRect(1600, 106, 34, 974);
+    const strikes = [0.7, 1.9, 3.1];
+    let swing = 0, count = 106;
+    for (const ts of strikes) {
+      const dt = lt - ts;
+      if (dt < 0) continue;
+      count++;
+      swing += 0.045 * Math.exp(-dt * 1.6) * Math.sin(dt * 4.5);
+      c.save(); c.strokeStyle = `rgba(255,220,160,${0.5 * (1 - dt / 2)})`; c.lineWidth = 3;
+      if (dt < 2) { c.beginPath(); c.arc(1400, 383, 110 + dt * 380, 0, Math.PI * 2); c.stroke(); }
+      c.restore();
+    }
+    bell(c, 1400, 130, 460, swing);
+    const off = -150 * (1 - Math.abs(Math.cos(Math.PI * (lt - 0.7) / 1.2)));
+    c.strokeStyle = '#2a1a10'; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(1010 + off, 440); c.lineTo(1080, 106); c.moveTo(1160 + off, 440); c.lineTo(1160, 106); c.stroke();
+    c.fillStyle = '#6b4a2b';
+    c.beginPath(); c.roundRect(966 + off, 440, 250, 44, 22); c.fill();
+    text(c, `🔔 ${Math.min(count, 108)} / 108`, 1400, 820, { font: `800 64px ${HEAD}`, align: 'center', color: GOLD, shadow: 'rgba(255,180,80,0.6)' });
+    text(c, '除夜の鐘', 1400, 905, { font: `56px ${BRUSH}`, align: 'center', color: '#fff', alpha: 0.85 });
+  },
+  sunrise(c, lt, t) {
+    sky(c, [[0, '#26346e'], [0.42, '#c2607a'], [0.68, '#ffb56b'], [0.71, '#ffd9a0']]);
+    const hy = 760, sy = lerp(880, 560, easeOut(prog(lt, 0, 3.2)));
+    sun(c, 1300, sy, 150, '#ff4d2e');
+    const sg = c.createLinearGradient(0, hy, 0, BH);
+    sg.addColorStop(0, '#f39062'); sg.addColorStop(1, '#2f2550');
+    c.fillStyle = sg; c.fillRect(0, hy, BW, BH - hy);
+    const r = rng(55);
+    c.fillStyle = 'rgba(255,220,150,0.5)';
+    for (let i = 0; i < 26; i++) {
+      const y = hy + 6 + i * 12, w = (300 - i * 8) * (0.6 + 0.4 * Math.abs(Math.sin(t * 2 + r() * 6)));
+      c.fillRect(1300 - w / 2, y, w, 3);
+    }
+    c.save();
+    c.beginPath(); c.rect(0, 900, BW, 180); c.clip();
+    c.translate(0, 1800); c.scale(1, -1); c.globalAlpha = 0.3;
+    torii(c, 1300, 900, 430, '#7a1410', '#1a0606');
+    c.restore();
+    torii(c, 1300, 900, 430, '#b81c12', '#2a0a08');
+  },
+  ret(c, lt, t) {
+    sky(c, [[0, '#2f73c9'], [1, '#cfe9ff']]);
+    glow(c, 300, 160, 400, 'rgba(255,250,220,0.6)');
+    clouds(c, t, 61, 7, 100, 450, 60, 40, 80, 0.55);
+    const x = lerp(1050, 1500, lt / 3.6), y = 470 + Math.sin(t * 2) * 12;
+    emoji(c, '✈️', x, y, 220, Math.PI / 4);
+    clouds(c, t, 62, 9, 820, 1000, 160, 90, 150, 0.95);
+  },
+};
+
+// --------------------------------------------------------------- escenas
+function sIntro(c, lt, d, t) {
+  sky(c, [[0, '#060b24'], [0.5, '#2b1a4a'], [0.78, '#7a2e4a'], [1, '#f08a5d']]);
+  stars(c, t, 3, 200, 1 - 0.6 * easeOut(prog(lt, 1, 4)));
+  sun(c, 960, lerp(860, 520, easeOut(prog(lt, 0, 4.5))), 175);
+  drawFuji(c, 960, 1080, 980, 520);
+  // Título letra por letra
+  const word = 'JAPÓN', font = `900 230px ${HEAD}`, sp = 28;
+  c.save(); c.font = font; c.letterSpacing = `${sp}px`;
+  const widths = [...word].map((ch) => c.measureText(ch).width);
+  c.restore();
+  let x = 960 - (widths.reduce((a, b) => a + b, 0) - sp) / 2;
+  [...word].forEach((ch, i) => {
+    const a = easeBack(prog(lt, 0.5 + i * 0.12, 0.7));
+    text(c, ch, x, 300 - (1 - a) * 90, { font, spacing: sp, alpha: clamp(a), shadow: 'rgba(0,0,0,0.6)', blur: 30 });
+    x += widths[i];
+  });
+  const a1 = easeOut(prog(lt, 1.6, 0.8));
+  text(c, 'Navidad y Año Nuevo al otro lado del mundo', 960, 390 + (1 - a1) * 20, { font: `600 50px ${BODY}`, align: 'center', alpha: a1, shadow: 'rgba(0,0,0,0.6)' });
+  const a2 = easeOut(prog(lt, 2.3, 0.8));
+  c.save(); c.globalAlpha = a2; c.fillStyle = 'rgba(230,0,51,0.92)';
+  c.beginPath(); c.roundRect(960 - 330, 440, 660, 76, 38); c.fill(); c.restore();
+  text(c, '🎄 25 DIC 2026  →  2 ENE 2027 🎍', 960, 491, { font: `800 36px ${HEAD}`, align: 'center', alpha: a2, spacing: 2 });
+  const a3 = easeOut(prog(lt, 1.0, 1.2));
+  text(c, '日', 1760, 300, { font: `200px ${BRUSH}`, align: 'center', alpha: a3 * 0.95, shadow: 'rgba(0,0,0,0.5)' });
+  text(c, '本', 1760, 520, { font: `200px ${BRUSH}`, align: 'center', alpha: a3 * 0.95, shadow: 'rgba(0,0,0,0.5)' });
+}
+
+function sDates(c, lt, d, t) {
+  sky(c, [[0, '#0b1a2e'], [1, '#1d3e5a']]);
+  garland(c, t, -20, 20, 1940, 40, 90, 1);
+  const ah = easeOut(prog(lt, 0.1, 0.6));
+  text(c, '¿CUÁNDO?', 960, 200, { font: `800 44px ${HEAD}`, align: 'center', color: GOLD, spacing: 12, alpha: ah });
+  const card = (x, delay, label, big, month, foot, col) => {
+    const a = easeBack(prog(lt, delay, 0.7));
+    c.save(); c.globalAlpha = clamp(a);
+    c.translate(x + 280, 470); c.scale(lerp(0.8, 1, clamp(a)), lerp(0.8, 1, clamp(a))); c.translate(-280, -470 + 260);
+    c.fillStyle = 'rgba(255,255,255,0.08)'; c.strokeStyle = col; c.lineWidth = 4;
+    c.beginPath(); c.roundRect(0, 0, 560, 400, 28); c.fill(); c.stroke();
+    text(c, label, 280, 70, { font: `800 36px ${HEAD}`, align: 'center', color: col, spacing: 8 });
+    text(c, big, 280, 250, { font: `900 190px ${HEAD}`, align: 'center' });
+    text(c, month, 280, 310, { font: `700 40px ${BODY}`, align: 'center', spacing: 4 });
+    text(c, foot, 280, 370, { font: `600 34px ${BODY}`, align: 'center', color: 'rgba(255,255,255,0.8)' });
+    c.restore();
+  };
+  card(300, 0.3, 'SALIMOS', '25', 'DICIEMBRE 2026', '🎄 Navidad', '#ff4d6d');
+  card(1060, 0.7, 'REGRESAMOS', '2', 'ENERO 2027', '🎍 Año Nuevo', GOLD);
+  const p = easeInOut(prog(lt, 1.2, 1.8));
+  if (p > 0 && p < 1) planeAt(c, (q) => lerp(860, 1060, q), (q) => 470 - 160 * Math.sin(Math.PI * q), p, 70, 0.4);
+  const days = [['25', 'DIC'], ['26', 'DIC'], ['27', 'DIC'], ['28', 'DIC'], ['29', 'DIC'], ['30', 'DIC'], ['31', 'DIC'], ['1', 'ENE'], ['2', 'ENE']];
+  const cw = 150, gap = 14, x0 = 960 - (days.length * cw + (days.length - 1) * gap) / 2;
+  days.forEach(([dn, mo], i) => {
+    const a = easeOut(prog(lt, 2.4 + i * 0.16, 0.4));
+    const x = x0 + i * (cw + gap), y = 780 - (1 - a) * 30;
+    c.save(); c.globalAlpha = 0.25 + 0.75 * a;
+    c.fillStyle = a > 0.5 ? (mo === 'DIC' ? 'rgba(230,0,51,0.85)' : 'rgba(255,200,97,0.9)') : 'rgba(255,255,255,0.1)';
+    c.beginPath(); c.roundRect(x, y, cw, 120, 16); c.fill(); c.restore();
+    text(c, dn, x + cw / 2, y + 70, { font: `900 56px ${HEAD}`, align: 'center', color: mo === 'ENE' && a > 0.5 ? '#2a1600' : '#fff', alpha: 0.4 + 0.6 * a });
+    text(c, mo, x + cw / 2, y + 104, { font: `700 24px ${BODY}`, align: 'center', color: mo === 'ENE' && a > 0.5 ? '#2a1600' : '#fff', alpha: 0.4 + 0.6 * a, spacing: 3 });
+  });
+  const ac = easeOut(prog(lt, 4.1, 0.7));
+  text(c, '9 días · 7 noches en Japón 🇯🇵', 960, 1000, { font: `700 46px ${BODY}`, align: 'center', alpha: ac });
+}
+
+function sRoute(c, lt, d, t) {
+  sky(c, [[0, '#04101f'], [1, '#0b2a44']]);
+  c.save(); c.strokeStyle = 'rgba(120,180,255,0.08)'; c.lineWidth = 1;
+  for (let x = 0; x <= BW; x += 80) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, BH); c.stroke(); }
+  for (let y = 0; y <= BH; y += 80) { c.beginPath(); c.moveTo(0, y); c.lineTo(BW, y); c.stroke(); }
+  c.restore();
+  text(c, 'LA RUTA', 120, 150, { font: `900 72px ${HEAD}`, spacing: 8, alpha: easeOut(prog(lt, 0, 0.5)) });
+  text(c, 'Océano Pacífico', 1250, 840, { font: `italic 500 34px ${BODY}`, color: 'rgba(160,200,255,0.45)', align: 'center' });
+  // Japón a la izquierda y México a la derecha (mapa centrado en el Pacífico)
+  const geo = (lon, lat) => ({ x: 250 + (lon - 135) * 150, y: 620 - (lat - 35) * 150 });
+  const P = {
+    osaka: geo(135.5, 34.69), kyoto: geo(135.77, 35.01), nara: geo(135.8, 34.68),
+    fuji: geo(138.76, 35.5), tokyo: geo(139.7, 35.7), cdmx: { x: 1720, y: 760 },
+  };
+  const seg = (a, b, bend) => {
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2 + bend;
+    return { fx: (q) => lerp(lerp(a.x, mx, q), lerp(mx, b.x, q), q), fy: (q) => lerp(lerp(a.y, my, q), lerp(my, b.y, q), q) };
+  };
+  const legs = [
+    { s: seg(P.cdmx, P.tokyo, -420), t0: 0.5, dur: 1.3, col: '#ffffff', dash: [14, 12], plane: true },
+    { s: seg(P.tokyo, P.fuji, -40), t0: 1.9, dur: 0.45, col: '#7fd1ff' },
+    { s: seg(P.fuji, P.kyoto, -30), t0: 2.35, dur: 0.6, col: GOLD },
+    { s: seg(P.kyoto, P.nara, 0), t0: 2.95, dur: 0.3, col: GOLD },
+    { s: seg(P.nara, P.osaka, 0), t0: 3.25, dur: 0.3, col: GOLD },
+    { s: seg(P.osaka, P.tokyo, 120), t0: 3.55, dur: 0.7, col: GOLD },
+    { s: seg(P.tokyo, P.cdmx, 220), t0: 4.3, dur: 1.1, col: '#ff8fa3', dash: [14, 12], plane: true },
+  ];
+  for (const leg of legs) {
+    const p = easeInOut(prog(lt, leg.t0, leg.dur));
+    if (p <= 0) continue;
+    c.save(); c.strokeStyle = leg.col; c.lineWidth = 5; c.lineCap = 'round';
+    if (leg.dash) c.setLineDash(leg.dash);
+    c.beginPath();
+    for (let i = 0; i <= 60; i++) {
+      const q = p * i / 60;
+      i ? c.lineTo(leg.s.fx(q), leg.s.fy(q)) : c.moveTo(leg.s.fx(q), leg.s.fy(q));
+    }
+    c.stroke(); c.restore();
+    if (leg.plane && p < 1) planeAt(c, leg.s.fx, leg.s.fy, p, 64, 0);
+  }
+  const cities = [
+    ['cdmx', 'CDMX 🇲🇽', 0.2, 0, 60], ['tokyo', 'Tokio', 1.8, 0, -34], ['fuji', 'Fuji', 2.3, 0, -34],
+    ['kyoto', 'Kioto', 2.9, 0, -34], ['nara', 'Nara', 3.2, 70, 40], ['osaka', 'Osaka', 3.5, -60, 54],
+  ];
+  for (const [k, label, at, dx, dy] of cities) {
+    const a = easeBack(prog(lt, at, 0.5));
+    if (a <= 0) continue;
+    const { x, y } = P[k];
+    c.save(); c.globalAlpha = clamp(a);
+    glow(c, x, y, 50, 'rgba(255,80,100,0.6)');
+    c.fillStyle = '#fff'; c.beginPath(); c.arc(x, y, 11 * a, 0, Math.PI * 2); c.fill();
+    c.fillStyle = RED; c.beginPath(); c.arc(x, y, 6 * a, 0, Math.PI * 2); c.fill();
+    c.restore();
+    text(c, label, x + dx, y + dy, { font: `800 36px ${HEAD}`, align: 'center', alpha: clamp(a), shadow: 'rgba(0,0,0,0.8)' });
+  }
+  const al = easeOut(prog(lt, 4.6, 0.6));
+  text(c, '✈️ Vuelo redondo     🚄 Shinkansen     🚌 Excursión al Fuji', 120, 1000, { font: `600 36px ${BODY}`, alpha: al, color: 'rgba(255,255,255,0.9)' });
+}
+
+const DAYS = [
+  { n: 1, date: 'VIE 25 DIC', title: '¡Despegamos!', emoji: '✈️', place: 'CDMX → Tokio', kanji: '出発', bg: 'depart',
+    desc: 'Cenamos Nochebuena en casa y el 25 volamos unas 14 horas directo a Tokio.' },
+  { n: 2, date: 'SÁB 26 DIC', title: 'Tokio', emoji: '🗼', place: 'Shinjuku · Shibuya', kanji: '東京', bg: 'tokyo',
+    desc: 'Llegamos, cruzamos el famoso cruce de Shibuya y cenamos ramen entre luces navideñas.' },
+  { n: 3, date: 'DOM 27 DIC', title: 'Asakusa', emoji: '🏮', place: 'Sensō-ji · Akihabara', kanji: '浅草', bg: 'asakusa',
+    desc: 'El templo más antiguo de Tokio, la calle Nakamise y la locura otaku de Akihabara.' },
+  { n: 4, date: 'LUN 28 DIC', title: 'Monte Fuji', emoji: '🗻', place: 'Lago Kawaguchi', kanji: '富士山', bg: 'fuji',
+    desc: 'Excursión de un día para ver el Fuji nevado reflejado en el lago.' },
+  { n: 5, date: 'MAR 29 DIC', title: 'Kioto', emoji: '🚄', place: 'Shinkansen · Fushimi Inari', kanji: '京都', bg: 'kyoto',
+    desc: 'Tren bala a 285 km/h y tarde caminando entre miles de toriis rojos.' },
+  { n: 6, date: 'MIÉ 30 DIC', title: 'Arashiyama', emoji: '🎋', place: 'Bambú · Pabellón Dorado', kanji: '嵐山', bg: 'bamboo',
+    desc: 'El bosque de bambú por la mañana y el Kinkaku-ji brillando en dorado.' },
+  { n: 7, date: 'JUE 31 DIC', title: 'Nochevieja', emoji: '🔔', place: 'Nara · Osaka', kanji: '大晦日', bg: 'bell',
+    desc: 'Venados en Nara, takoyaki en Dotonbori y a medianoche las 108 campanadas del templo.' },
+  { n: 8, date: 'VIE 1 ENE', title: '¡Año Nuevo!', emoji: '🎍', place: 'Hatsumōde', kanji: '初詣', bg: 'sunrise',
+    desc: 'Primer amanecer del año, visita al templo para pedir suerte y regreso a Tokio.' },
+  { n: 9, date: 'SÁB 2 ENE', title: 'De regreso', emoji: '🇲🇽', place: 'Tokio → CDMX', kanji: '帰国', bg: 'ret',
+    desc: 'Volamos a casa y, por la diferencia de horario, ¡llegamos el mismo 2 de enero!' },
+];
+
+function sDay(day) {
+  return (c, lt, d, t) => {
+    BG[day.bg](c, lt, t);
+    const g = c.createLinearGradient(0, 0, 1250, 0);
+    g.addColorStop(0, 'rgba(5,5,15,0.85)'); g.addColorStop(0.6, 'rgba(5,5,15,0.55)'); g.addColorStop(1, 'rgba(5,5,15,0)');
+    c.fillStyle = g; c.fillRect(0, 0, 1250, BH);
+    const ap = (s) => easeOut(prog(lt, s, 0.55));
+
+    let a = ap(0.1);
+    c.save(); c.globalAlpha = a; c.translate(-(1 - a) * 60, 0);
+    c.fillStyle = RED; c.beginPath(); c.roundRect(120, 250, 190, 64, 32); c.fill();
+    text(c, `DÍA ${day.n}`, 215, 294, { font: `800 34px ${HEAD}`, align: 'center', spacing: 4 });
+    text(c, day.date, 338, 294, { font: `700 34px ${BODY}`, color: GOLD, spacing: 3 });
+    c.restore();
+
+    a = ap(0.2);
+    text(c, `${day.title} ${day.emoji}`, 120 - (1 - a) * 80, 440, { font: `900 118px ${HEAD}`, alpha: a, shadow: 'rgba(0,0,0,0.5)' });
+    a = ap(0.35);
+    text(c, day.place, 120, 508, { font: `600 44px ${BODY}`, color: '#ffd9a0', alpha: a, spacing: 1 });
+    a = ap(0.5);
+    const dfont = `400 38px ${BODY}`;
+    wrapLines(c, day.desc, 830, dfont).forEach((ln, i) =>
+      text(c, ln, 120, 596 + i * 54 + (1 - a) * 20, { font: dfont, color: 'rgba(255,255,255,0.93)', alpha: a }));
+
+    const chars = [...day.kanji], ks = Math.min(210, 600 / chars.length);
+    a = ap(0.25);
+    chars.forEach((ch, i) => text(c, ch, 1745, 160 + ks * (i + 0.86) + (1 - a) * 30,
+      { font: `${ks}px ${BRUSH}`, align: 'center', alpha: a * 0.96, shadow: 'rgba(0,0,0,0.7)', blur: 30 }));
+    const sy = 190 + ks * chars.length;
+    c.save(); c.globalAlpha = ap(0.6);
+    c.fillStyle = RED; c.beginPath(); c.roundRect(1705, sy, 80, 80, 10); c.fill();
+    text(c, '旅', 1745, sy + 62, { font: `58px ${BRUSH}`, align: 'center' });
+    c.restore();
+
+    for (let i = 1; i <= DAYS.length; i++) {
+      const x = 130 + (i - 1) * 64, y = 1000;
+      if (i > 1) { c.fillStyle = i <= day.n ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.2)'; c.fillRect(x - 64 + 10, y - 2, 44, 4); }
+      if (i === day.n) {
+        glow(c, x, y, 40, 'rgba(230,0,51,0.7)');
+        c.fillStyle = RED; c.beginPath(); c.arc(x, y, 14 + 2 * Math.sin(t * 5), 0, Math.PI * 2); c.fill();
+      } else {
+        c.fillStyle = i < day.n ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.25)';
+        c.beginPath(); c.arc(x, y, 9, 0, Math.PI * 2); c.fill();
+      }
+    }
+  };
+}
+
+const COSTS = [
+  ['✈️', 'Vuelo redondo CDMX ⇄ Tokio', 22000],
+  ['🏨', 'Hospedaje 7 noches', 8000],
+  ['🚄', 'Shinkansen, metro y excursiones', 4000],
+  ['🍜', 'Comida y viáticos', 6000],
+];
+const money = (v) => `$${Math.round(v).toLocaleString('es-MX')}`;
+
+function sPrice(c, lt, d, t) {
+  sky(c, [[0, '#14081f'], [1, '#3b0d1f']]);
+  const r = rng(91);
+  c.save(); c.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 70; i++) {
+    const x = r() * BW, y = ((r() * BH - t * (20 + r() * 40)) % BH + BH) % BH;
+    c.globalAlpha = 0.25 + 0.35 * Math.abs(Math.sin(t * 2 + i)); glow(c, x, y, 8 + r() * 10, 'rgba(255,200,97,0.8)');
+  }
+  c.restore();
+  text(c, '¿CUÁNTO CUESTA?', 960, 110, { font: `800 46px ${HEAD}`, align: 'center', color: GOLD, spacing: 12, alpha: easeOut(prog(lt, 0.1, 0.5)) });
+  const cp = easeOut(prog(lt, 0.4, 2.4));
+  const pop = 1 + 0.08 * Math.sin(Math.PI * prog(lt, 2.8, 0.4));
+  const nfont = `900 200px ${HEAD}`, mfont = `800 64px ${HEAD}`;
+  c.save(); c.font = nfont; const nw = c.measureText(money(40000)).width; c.font = mfont; const mw = c.measureText('MXN').width; c.restore();
+  const left = -(nw + 24 + mw) / 2, an = easeOut(prog(lt, 0.3, 0.4));
+  c.save(); c.translate(960, 340); c.scale(pop, pop);
+  text(c, money(40000 * cp), left + nw, 0, { font: nfont, align: 'right', shadow: 'rgba(255,180,80,0.55)', blur: 40, alpha: an });
+  text(c, 'MXN', left + nw + 24, 0, { font: mfont, color: GOLD, alpha: an });
+  c.restore();
+  const ai = easeBack(prog(lt, 2.8, 0.6));
+  c.save(); c.globalAlpha = clamp(ai); c.translate(960, 425); c.scale(clamp(ai, 0, 1.2), clamp(ai, 0, 1.2));
+  c.fillStyle = RED; c.beginPath(); c.roundRect(-310, -40, 620, 80, 40); c.fill();
+  text(c, 'TODO INCLUIDO ✅', 0, 16, { font: `900 44px ${HEAD}`, align: 'center', spacing: 4 });
+  c.restore();
+  COSTS.forEach(([em, label, val], i) => {
+    const a = easeOut(prog(lt, 3.4 + i * 0.45, 0.6));
+    const y = 560 + i * 110, x = 380;
+    text(c, em, x, y + 12, { font: `52px ${BODY}`, alpha: a });
+    text(c, label, x + 80, y + 4, { font: `600 38px ${BODY}`, alpha: a });
+    text(c, money(val * a), 1540, y + 4, { font: `800 40px ${HEAD}`, align: 'right', color: GOLD, alpha: a });
+    c.fillStyle = 'rgba(255,255,255,0.1)'; c.fillRect(x + 80, y + 26, 1080, 10);
+    c.fillStyle = GOLD; c.fillRect(x + 80, y + 26, 1080 * (val / 22000) * easeInOut(prog(lt, 3.6 + i * 0.45, 0.8)), 10);
+  });
+  text(c, '* Precios estimados. Comprando los vuelos con anticipación.', 960, 1030,
+    { font: `400 28px ${BODY}`, align: 'center', color: 'rgba(255,255,255,0.6)', alpha: easeOut(prog(lt, 5.6, 0.6)) });
+}
+
+const BURSTS = (() => {
+  const r = rng(2027), out = [];
+  for (let i = 0; i < 14; i++) out.push({ t: 0.4 + i * 0.5 + r() * 0.3, x: 200 + r() * 1520, y: 120 + r() * 380, s: 0.7 + r() * 0.6, hue: Math.floor(r() * 360), seed: i + 1 });
+  return out;
+})();
+
+function sOutro(c, lt, d, t) {
+  sky(c, [[0, '#02030a'], [1, '#1a1035']]);
+  stars(c, t, 17, 140, 0.8);
+  fireworks(c, lt, BURSTS);
+  skyline(c, t, 21, 1080, { neon: true, color: '#05060c', windows: true });
+  const a1 = easeOut(prog(lt, 0.6, 0.9));
+  text(c, 'あけましておめでとう', 960, 300 + (1 - a1) * 30, { font: `118px ${BRUSH}`, align: 'center', alpha: a1, shadow: 'rgba(255,120,80,0.7)', blur: 40 });
+  const a2 = easeOut(prog(lt, 1.4, 0.8));
+  text(c, '¡Feliz Navidad y feliz 2027!', 960, 410, { font: `800 64px ${HEAD}`, align: 'center', alpha: a2, shadow: 'rgba(0,0,0,0.7)' });
+  const a3 = easeOut(prog(lt, 2.1, 0.8));
+  text(c, 'Japón 🇯🇵 · 25 dic – 2 ene · $40,000 MXN todo incluido', 960, 490, { font: `600 42px ${BODY}`, align: 'center', color: GOLD, alpha: a3, shadow: 'rgba(0,0,0,0.7)' });
+  const a4 = easeBack(prog(lt, 3.0, 0.7));
+  const pulse = 1 + 0.04 * Math.sin(Math.max(0, lt - 3.7) * 5);
+  c.save(); c.translate(960, 680); c.scale(clamp(a4, 0, 1.3) * pulse, clamp(a4, 0, 1.3) * pulse);
+  text(c, '¿Te lanzas? 🙌', 0, 0, { font: `900 140px ${HEAD}`, align: 'center', alpha: clamp(a4), shadow: 'rgba(230,0,51,0.8)', blur: 50 });
+  c.restore();
+}
+
+// --------------------------------------------------------------- línea de tiempo
+const SCENES = [];
+let cursor = 0;
+const add = (dur, draw, snowAmt = 0.6) => { SCENES.push({ start: cursor, dur, draw, snowAmt }); cursor += dur; };
+add(6, sIntro);
+add(6, sDates);
+add(6, sRoute, 0.3);
+for (const day of DAYS) add(3, sDay(day), ['ret', 'sunrise', 'bamboo'].includes(day.bg) ? 0.25 : 0.6);
+add(9, sPrice, 0.3);
+add(8, sOutro);
+const TOTAL_DUR = cursor;
+window.SCENE_DURATION = TOTAL_DUR;
+window.SCENE_TIMELINE = SCENES.map((s) => s.start);
+
+// --------------------------------------------------------------- contrato con render.mjs
+const main = document.getElementById('stage');
+const mctx = main.getContext('2d');
+const layer = document.createElement('canvas');
+const lctx = layer.getContext('2d');
+let W = BW, H = BH, S = 1;
+
+window.setup = async ({ width, height }) => {
+  W = width; H = height; S = W / BW;
+  main.width = layer.width = W; main.height = layer.height = H;
+  await Promise.all([
+    document.fonts.load(`80px ${BRUSH}`, '日本'),
+    document.fonts.load(`900 80px ${HEAD}`, 'JAPÓN'),
+    document.fonts.load(`80px ${BODY}`, 'Año'),
+    document.fonts.load('80px "Noto Color Emoji"', '✈️🇯🇵'),
+  ]);
+};
+
+window.renderFrame = (frame, time) => {
+  const m = mctx;
+  m.setTransform(1, 0, 0, 1, 0, 0); m.globalAlpha = 1;
+  m.fillStyle = '#000'; m.fillRect(0, 0, W, H);
+  let snowAmt = 0;
+  for (const s of SCENES) {
+    if (time < s.start || time >= s.start + s.dur + XF) continue;
+    const a = s.start === 0 ? 1 : easeInOut(prog(time, s.start, XF));
+    lctx.setTransform(1, 0, 0, 1, 0, 0); lctx.clearRect(0, 0, W, H);
+    lctx.setTransform(S, 0, 0, S, 0, 0); lctx.globalAlpha = 1;
+    s.draw(lctx, time - s.start, s.dur, time);
+    m.globalAlpha = a; m.drawImage(layer, 0, 0);
+    snowAmt = lerp(snowAmt, s.snowAmt, a);
+  }
+  m.globalAlpha = 1; m.setTransform(S, 0, 0, S, 0, 0);
+  snow(m, time, snowAmt);
+  vignette(m);
+  const k = Math.max(1 - prog(time, 0, 0.6), prog(time, TOTAL_DUR - 1.2, 1.2));
+  if (k > 0) { m.fillStyle = `rgba(0,0,0,${k})`; m.fillRect(0, 0, BW, BH); }
+};
+</script>
+</body>
+</html>

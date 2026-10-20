@@ -9,13 +9,18 @@
 //   node render.mjs [--scene scene.html] [--out out.mp4] [--fps 30]
 //                   [--duration 5] [--width 1280] [--height 720]
 //                   [--frames-dir dir]   (opcional: guarda también los PNG)
+//                   [--audio pista.wav]  (opcional: mezcla una pista de audio)
+//
+// Si se omite --duration y la escena define window.SCENE_DURATION, se usa esa.
+// La escena se sirve por HTTP local para que pueda cargar fuentes e imágenes
+// relativas a su carpeta.
 
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
 const { values: opts } = parseArgs({
@@ -23,22 +28,23 @@ const { values: opts } = parseArgs({
     scene: { type: 'string', default: 'scene.html' },
     out: { type: 'string', default: 'out.mp4' },
     fps: { type: 'string', default: '30' },
-    duration: { type: 'string', default: '5' },
+    duration: { type: 'string' },
     width: { type: 'string', default: '1280' },
     height: { type: 'string', default: '720' },
     'frames-dir': { type: 'string' },
+    audio: { type: 'string' },
   },
 });
 
 const fps = Number(opts.fps);
 const width = Number(opts.width);
 const height = Number(opts.height);
-const totalFrames = Math.round(Number(opts.duration) * fps);
 const scenePath = path.resolve(opts.scene);
 const outPath = path.resolve(opts.out);
 const framesDir = opts['frames-dir'] && path.resolve(opts['frames-dir']);
+const audioPath = opts.audio && path.resolve(opts.audio);
 
-if (![fps, width, height, totalFrames].every((n) => Number.isFinite(n) && n > 0)) {
+if (![fps, width, height].every((n) => Number.isFinite(n) && n > 0)) {
   console.error('Parámetros numéricos inválidos');
   process.exit(1);
 }
@@ -55,12 +61,36 @@ if (existsSync(PREINSTALLED) && !process.env.PLAYWRIGHT_BROWSERS_PATH) {
   launchOpts.executablePath = PREINSTALLED;
 }
 
+const MIME = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript',
+  '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
+  '.svg': 'image/svg+xml', '.ttf': 'font/ttf', '.otf': 'font/otf', '.woff': 'font/woff', '.woff2': 'font/woff2',
+};
+
+// Servidor estático mínimo sobre la carpeta de la escena (solo 127.0.0.1).
+function serveDir(root) {
+  const server = createServer(async (req, res) => {
+    const rel = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+    const file = path.join(root, path.normalize(rel));
+    if (!file.startsWith(root + path.sep)) { res.writeHead(403).end(); return; }
+    try {
+      const body = await readFile(file);
+      res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' }).end(body);
+    } catch {
+      res.writeHead(404).end();
+    }
+  });
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)));
+}
+
 function startFfmpeg() {
   const args = [
     '-y', '-loglevel', 'error',
     '-f', 'image2pipe', '-framerate', String(fps), '-c:v', 'png', '-i', 'pipe:0',
+    ...(audioPath ? ['-i', audioPath] : []),
     '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
     '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
+    ...(audioPath ? ['-c:a', 'aac', '-b:a', '192k', '-shortest'] : []),
     outPath,
   ];
   const proc = spawn('ffmpeg', args, { stdio: ['pipe', 'inherit', 'inherit'] });
@@ -84,15 +114,22 @@ function writeFrame(stream, buf) {
 async function main() {
   if (framesDir) await mkdir(framesDir, { recursive: true });
 
+  const server = await serveDir(path.dirname(scenePath));
   const browser = await chromium.launch(launchOpts);
-  const ffmpeg = startFfmpeg();
+  let ffmpeg, totalFrames;
   const started = Date.now();
 
   try {
     const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
     page.on('pageerror', (err) => console.error('[escena]', err.message));
-    await page.goto(pathToFileURL(scenePath).href, { waitUntil: 'load' });
+    const { port } = server.address();
+    await page.goto(`http://127.0.0.1:${port}/${encodeURIComponent(path.basename(scenePath))}`, { waitUntil: 'load' });
     await page.evaluate(() => document.fonts.ready);
+
+    const duration = Number(opts.duration ?? (await page.evaluate(() => window.SCENE_DURATION)) ?? 5);
+    totalFrames = Math.round(duration * fps);
+    if (!(totalFrames > 0)) throw new Error(`Duración inválida: ${duration}`);
+    ffmpeg = startFfmpeg();
     await page.evaluate((cfg) => window.setup(cfg), { width, height, fps, totalFrames });
 
     const canvas = page.locator('canvas').first();
@@ -121,8 +158,9 @@ async function main() {
     }
     process.stdout.write('\n');
   } finally {
-    ffmpeg.proc.stdin.end();
+    ffmpeg?.proc.stdin.end();
     await browser.close();
+    server.close();
   }
 
   await ffmpeg.done;

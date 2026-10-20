@@ -45,3 +45,19 @@ window.renderFrame = async (frame, time) => { /* pinta UN fotograma */ };
 No uses `requestAnimationFrame`, `Date.now()` ni `Math.random()` sin semilla para animar: deriva todo de `frame`/`time`. `renderFrame` puede ser `async` (p. ej. para esperar imágenes o fuentes).
 
 Luego: `node render.mjs --scene mi-escena.html`.
+
+`render.mjs` sirve la carpeta de la escena por HTTP local, así que puede cargar fuentes e imágenes relativas. Si la escena define `window.SCENE_DURATION`, no hace falta pasar `--duration`. Con `--audio pista.wav` se añade una pista de audio (AAC).
+
+## Ejemplo: video "Japón en Navidad" (`japon/`)
+
+Presentación de 62 s en 1080p sobre un viaje a Japón (25 dic 2026 → 2 ene 2027, $40,000 MXN todo incluido): intro, fechas, mapa de la ruta, 9 días de itinerario, desglose del precio y final con fuegos artificiales.
+
+- `japon/japon.html`: todas las escenas, dibujadas en canvas (sin imágenes externas).
+- `japon/music.mjs`: música sintetizada por código (koto en escala pentatónica japonesa, taiko, cascabeles, campana de templo), sincronizada con las escenas.
+- `japon/fonts/`: subconjunto de Yuji Syuku (OFL) para los kanji.
+
+```bash
+cd japon && ./build.sh            # -> japon/out/viaje-japon.mp4
+```
+
+Para cambiar textos, fechas o precios edita `DAYS` y `COSTS` en `japon.html`. Si cambias la duración de las escenas, ajusta también las constantes de tiempo al principio de `music.mjs`.
