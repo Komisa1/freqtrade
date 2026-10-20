@@ -32,7 +32,7 @@ class FilterConfig:
     min_volume_m5_usd: float = 2_000
     min_txns_m5: int = 25
     min_buy_sell_ratio_m5: float = 1.15  # mas compras que ventas en 5 min
-    max_price_change_h1_pct: float = 150  # no perseguir monedas que ya volaron
+    max_price_change_h1_pct: float = 100  # no perseguir monedas que ya volaron
     max_price_change_m5_pct: float = 25  # solo en modo "momentum": no comprar en plena vela
     min_price_change_m5_pct: float = -5
     min_score: float = 60  # puntaje minimo (0-100) del scoring
@@ -48,6 +48,10 @@ class FilterConfig:
     pullback_min_pct: float = 12
     pullback_max_pct: float = 35
     pullback_min_buy_sell_ratio: float = 0.9
+    # v3: despues del retroceso, comprar solo cuando rebote este % desde el minimo
+    # y vaya positiva en 5 min (0 = comprar en la caida, como la v2)
+    pullback_bounce_pct: float = 4
+    pullback_min_change_m5_pct: float = 0
     arm_minutes: float = 20  # si en este tiempo no retrocede, se descarta
     # Excepcion de pump (solo en modo pullback): una moneda que ya subio mas de
     # max_price_change_h1_pct puede entrar si pasa revisiones mas estrictas, y entonces
@@ -70,15 +74,15 @@ class FilterConfig:
 
 @dataclass
 class ExitConfig:
-    stop_loss_pct: float = 30  # vender todo si cae 30% desde la entrada
+    stop_loss_pct: float = 22  # vender todo si cae 22% desde la entrada
     # escalera de toma de ganancias: [multiplo, % de la posicion ORIGINAL a vender]
     take_profit_ladder: list[list[float]] = field(
-        default_factory=lambda: [[2.0, 50.0], [4.0, 25.0]]
+        default_factory=lambda: [[1.5, 40.0], [2.5, 30.0], [5.0, 15.0]]
     )
     # al llegar a este multiplo el stop sube al precio de entrada (0 = desactivado)
     breakeven_after_multiple: float = 1.25
-    trailing_activate_multiple: float = 1.5  # el trailing se activa al llegar a 1.5x
-    trailing_stop_pct: float = 25  # vender el resto si cae 25% desde el maximo
+    trailing_activate_multiple: float = 1.3  # el trailing se activa al llegar a 1.3x
+    trailing_stop_pct: float = 18  # vender el resto si cae 18% desde el maximo
     max_hold_minutes: float = 240
     stale_minutes: float = 45  # si en 45 min no hizo +10%, salir
     stale_min_gain_pct: float = 10
@@ -105,7 +109,7 @@ class ExecutionConfig:
     priority_fee_sol: float = 0.0005
     jupiter_base_url: str = "https://lite-api.jup.ag/swap/v1"
     confirm_timeout_seconds: float = 60
-    price_poll_seconds: float = 5
+    price_poll_seconds: float = 2
 
 
 @dataclass
@@ -281,6 +285,31 @@ STRATEGY_PRESETS: dict[str, dict[str, dict[str, Any]]] = {
             "arm_minutes": 20,
         },
         "exits": {"breakeven_after_multiple": 1.25},
+    },
+    # v3, basada en 85 operaciones simuladas: comprar solo tras confirmar el rebote,
+    # no perseguir +100% en 1h, asegurar ganancia antes y stops mas rapidos
+    "marin-v3": {
+        "filters": {
+            "min_liquidity_usd": 15_000,
+            "min_market_cap_usd": 30_000,
+            "max_price_change_h1_pct": 100,
+            "max_price_change_m5_pct": 25,
+            "entry_mode": "pullback",
+            "pullback_min_pct": 12,
+            "pullback_max_pct": 35,
+            "pullback_min_buy_sell_ratio": 0.9,
+            "pullback_bounce_pct": 4,
+            "pullback_min_change_m5_pct": 0,
+            "arm_minutes": 20,
+        },
+        "exits": {
+            "stop_loss_pct": 22,
+            "take_profit_ladder": [[1.5, 40.0], [2.5, 30.0], [5.0, 15.0]],
+            "breakeven_after_multiple": 1.25,
+            "trailing_activate_multiple": 1.3,
+            "trailing_stop_pct": 18,
+        },
+        "execution": {"price_poll_seconds": 2},
     },
 }
 

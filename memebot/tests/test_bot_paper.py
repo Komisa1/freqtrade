@@ -3,7 +3,7 @@
 import time
 
 import aiohttp
-from helpers import snap
+from helpers import snap, v2_config
 
 from memebot.bot import Bot
 from memebot.config import Config
@@ -12,7 +12,7 @@ from memebot.safety import SafetyResult
 
 
 async def test_paper_buy_then_take_profit_then_trailing(tmp_path, monkeypatch):
-    cfg = Config(data_dir=str(tmp_path))
+    cfg = v2_config(tmp_path)
     async with aiohttp.ClientSession() as session:
         bot = Bot(cfg, session)
 

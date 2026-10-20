@@ -1,11 +1,10 @@
 import time
 
-from helpers import position
+from helpers import position, v2_exits
 
-from memebot.config import ExitConfig
 from memebot.exits import decide_exit
 
-CFG = ExitConfig()
+CFG = v2_exits()
 NOW = time.time()
 
 

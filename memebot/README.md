@@ -36,7 +36,18 @@ GMGN trending (opcional) ───────┘        (re-evalúa cada 20 s, 
    - **Salida de emergencia**: vende si la liquidez se desploma (posible rug).
 6. **Ejecución (modo live).** Opera vía **Jupiter**, que encuentra la mejor ruta en todos los DEX, incluida la bonding curve de pump.fun. Opcionalmente puede usar la API de trading de PumpPortal. La transacción se **firma en tu computadora**: la clave privada nunca se envía a ningún servidor.
 
-## Estrategia Marín v2 (entrada en retroceso)
+## Estrategia Marín v3 (rebote confirmado), la actual
+
+Ajustes hechos con 85 operaciones simuladas (28% de aciertos, -18% con la v2):
+
+- **Las perdedoras se compraban todavía cayendo** (-3% en 5 min); las ganadoras ya rebotaban (+3%). La v3 espera el retroceso **y además** que la moneda **rebote +4% desde su mínimo** e ir positiva en 5 min.
+- Las perdedoras habían subido más antes de comprarlas (+89% en 1 h contra +62% las ganadoras): máximo **+100% en 1 h** (el pump con excepción sigue igual).
+- Las ganancias se escapaban (llegaban a 1.5–1.7x y salían en ~1.05x): take profit **40% a 1.5x, 30% a 2.5x y 15% a 5x**, trailing desde **1.3x** con **-18%**.
+- Stop loss **-22%** y revisión de precio **cada 2 s** (antes -30% y cada 5 s; los stops salían muy tarde).
+
+Aplicarla: `python -m memebot estrategia` (o `estrategia marin-v2` para volver a la anterior). En el reporte sale como **"Rebote confirmado (v3)"**.
+
+## Estrategia Marín v2 (entrada en retroceso), anterior
 
 En la primera simulación casi todas las pérdidas fueron stop loss justo después de comprar: el bot compraba en el pico de la vela. La v2 cambia la entrada:
 

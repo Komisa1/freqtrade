@@ -42,3 +42,27 @@ def position(**kw) -> Position:
     )
     base.update(kw)
     return Position(**base)
+
+
+# Parametros de la v2, para que los tests de mecanica no dependan de los valores por defecto
+def v2_exits():
+    from memebot.config import ExitConfig
+
+    return ExitConfig(
+        stop_loss_pct=30,
+        take_profit_ladder=[[2.0, 50.0], [4.0, 25.0]],
+        trailing_activate_multiple=1.5,
+        trailing_stop_pct=25,
+    )
+
+
+def v2_filters(**kw):
+    from memebot.config import FilterConfig
+
+    return FilterConfig(pullback_bounce_pct=0, pullback_min_change_m5_pct=-100, **kw)
+
+
+def v2_config(tmp_path, **kw):
+    from memebot.config import Config
+
+    return Config(data_dir=str(tmp_path), exits=v2_exits(), filters=v2_filters(), **kw)

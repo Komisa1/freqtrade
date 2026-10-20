@@ -1,11 +1,10 @@
 import time
 
 import aiohttp
-from helpers import position, snap
+from helpers import position, snap, v2_config
 
 from memebot import chart
 from memebot.bot import Bot
-from memebot.config import Config
 from memebot.models import Candidate
 from memebot.safety import SafetyResult
 
@@ -23,7 +22,7 @@ async def test_build_chart_with_bot_prices_and_trades(tmp_path, monkeypatch):
 
     monkeypatch.setattr(chart, "gecko_candles", no_gecko)
     async with aiohttp.ClientSession() as session:
-        bot = Bot(Config(data_dir=str(tmp_path)), session)
+        bot = Bot(v2_config(tmp_path), session)
 
         async def ok(mint):
             return SafetyResult(ok=True)

@@ -22,7 +22,7 @@
     "min_volume_m5_usd": 2000,
     "min_txns_m5": 25,
     "min_buy_sell_ratio_m5": 1.15,
-    "max_price_change_h1_pct": 150,
+    "max_price_change_h1_pct": 100,
     "max_price_change_m5_pct": 25,
     "min_price_change_m5_pct": -5,
     "min_score": 60,
@@ -36,25 +36,40 @@
     "pullback_min_pct": 12,
     "pullback_max_pct": 35,
     "pullback_min_buy_sell_ratio": 0.9,
+    "pullback_bounce_pct": 4,
+    "pullback_min_change_m5_pct": 0,
     "arm_minutes": 20,
+    "pump_exception": true,
+    "pump_max_change_h1_pct": 1000,
+    "pump_min_liquidity_usd": 40000,
+    "pump_min_market_cap_usd": 100000,
+    "pump_min_buy_sell_ratio": 1.3,
+    "pump_min_txns_m5": 60,
+    "pump_min_score": 60,
+    "pump_pullback_min_pct": 20,
+    "pump_pullback_max_pct": 45,
     "watch_minutes": 30,
     "recheck_seconds": 20
   },
   "exits": {
-    "stop_loss_pct": 30,
+    "stop_loss_pct": 22,
     "take_profit_ladder": [
       [
-        2.0,
-        50.0
+        1.5,
+        40.0
       ],
       [
-        4.0,
-        25.0
+        2.5,
+        30.0
+      ],
+      [
+        5.0,
+        15.0
       ]
     ],
     "breakeven_after_multiple": 1.25,
-    "trailing_activate_multiple": 1.5,
-    "trailing_stop_pct": 25,
+    "trailing_activate_multiple": 1.3,
+    "trailing_stop_pct": 18,
     "max_hold_minutes": 240,
     "stale_minutes": 45,
     "stale_min_gain_pct": 10,
@@ -76,7 +91,7 @@
     "priority_fee_sol": 0.0005,
     "jupiter_base_url": "https://lite-api.jup.ag/swap/v1",
     "confirm_timeout_seconds": 60,
-    "price_poll_seconds": 5
+    "price_poll_seconds": 2
   },
   "dashboard": {
     "enabled": true,

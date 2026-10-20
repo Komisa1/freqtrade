@@ -22,6 +22,7 @@ FEATURES: list[tuple[str, str]] = [
     ("ratio", "Compras/ventas 5 min"),
 ]
 MODE_LABELS = {
+    "rebote": "Rebote confirmado (v3)",
     "pullback": "Retroceso (v2)",
     "pump": "Pump con excepcion",
     "momentum": "Momentum",
