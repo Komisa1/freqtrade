@@ -43,6 +43,7 @@ En la primera simulación casi todas las pérdidas fueron stop loss justo despu�
 1. Cuando una moneda califica (filtros + puntaje), Marín **no compra todavía**: la pone **"en la mira" 🎯** y guarda su máximo.
 2. Compra cuando la moneda **retrocede entre 12% y 35%** desde ese máximo y todavía hay compradores (compras/ventas ≥ 0.9). Si cae más de 35% o pasan 20 minutos sin retroceso, la descarta.
 3. Ya no persigue monedas que subieron más de **150% en 1 hora**, y pide **$15k de liquidez** y **$30k de market cap** como mínimo.
+   - **Excepción de pump 🚀:** una moneda que ya subió más de 150% (hasta 1000%) puede entrar si se ve muy sana: liquidez ≥ $40k, market cap ≥ $100k, compras/ventas ≥ 1.3, ≥ 60 transacciones en 5 min y buen puntaje. A esas les pide un retroceso más profundo (20–45%) y se miden aparte en el reporte ("Pump con excepción"). Se apaga con `python -m memebot set filters.pump_exception false`.
 4. Si una posición llega a **1.25x**, el stop sube a precio de entrada (breakeven).
 5. Guarda **cómo estaba cada moneda al comprarla**. El `report` y la pestaña Cerradas comparan **ganadoras vs perdedoras**, para ajustar con datos.
 

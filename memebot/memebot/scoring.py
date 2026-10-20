@@ -25,6 +25,38 @@ class Evaluation:
     verdict: Verdict
     score: float
     reasons: list[str] = field(default_factory=list)
+    pump: bool = False  # entro por la excepcion de pump (ya habia subido mucho)
+
+
+def pump_exception_ok(s: TokenSnapshot, score: float, cfg: FilterConfig) -> tuple[bool, str]:
+    """Una moneda que ya volo solo pasa si se ve muy sana: liquidez y market cap altos,
+    compradores dominando y mucha actividad. Devuelve (pasa, motivo)."""
+    if not cfg.pump_exception or cfg.entry_mode != "pullback":
+        return False, "excepcion de pump desactivada"
+    checks = [
+        (
+            s.change_h1 <= cfg.pump_max_change_h1_pct,
+            f"subio {s.change_h1:.0f}% en 1h (max {cfg.pump_max_change_h1_pct:.0f}%)",
+        ),
+        (
+            s.liquidity_known and s.liquidity_usd >= cfg.pump_min_liquidity_usd,
+            f"liquidez < ${cfg.pump_min_liquidity_usd:,.0f}",
+        ),
+        (
+            s.market_cap_usd >= cfg.pump_min_market_cap_usd,
+            f"market cap < ${cfg.pump_min_market_cap_usd:,.0f}",
+        ),
+        (
+            s.buy_sell_ratio_m5 >= cfg.pump_min_buy_sell_ratio,
+            f"compras/ventas < {cfg.pump_min_buy_sell_ratio}",
+        ),
+        (s.txns_m5 >= cfg.pump_min_txns_m5, f"menos de {cfg.pump_min_txns_m5} txns en 5m"),
+        (score >= cfg.pump_min_score, f"puntaje < {cfg.pump_min_score:.0f}"),
+    ]
+    for ok, why in checks:
+        if not ok:
+            return False, why
+    return True, f"excepcion de pump: +{s.change_h1:.0f}% en 1h pero se ve sana"
 
 
 def _lin(x: float, lo: float, hi: float, points: float) -> float:
@@ -86,8 +118,11 @@ def evaluate(s: TokenSnapshot, cfg: FilterConfig, now: float | None = None) -> E
         soft.append(f"pocas txns 5m ({s.txns_m5})")
     if s.buy_sell_ratio_m5 < cfg.min_buy_sell_ratio_m5:
         soft.append(f"compras/ventas 5m bajo ({s.buy_sell_ratio_m5:.2f})")
+    pump = False
     if s.change_h1 > cfg.max_price_change_h1_pct:
-        soft.append(f"ya subio demasiado ({s.change_h1:.0f}% en 1h)")
+        pump, why = pump_exception_ok(s, score, cfg)
+        if not pump:
+            soft.append(f"ya subio demasiado ({s.change_h1:.0f}% en 1h; {why})")
     if cfg.entry_mode == "momentum" and s.change_m5 > cfg.max_price_change_m5_pct:
         soft.append(f"subiendo muy rapido ({s.change_m5:.0f}% en 5m)")
     if s.change_m5 < cfg.min_price_change_m5_pct:
@@ -96,4 +131,6 @@ def evaluate(s: TokenSnapshot, cfg: FilterConfig, now: float | None = None) -> E
         soft.append(f"puntaje {score} < {cfg.min_score}")
     if soft:
         return Evaluation(Verdict.WAIT, score, soft)
+    if pump:
+        return Evaluation(Verdict.BUY, score, [f"puntaje {score}", why], pump=True)
     return Evaluation(Verdict.BUY, score, [f"puntaje {score}"])

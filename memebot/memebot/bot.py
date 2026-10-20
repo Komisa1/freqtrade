@@ -251,21 +251,27 @@ class Bot:
                 continue
             if f.entry_mode == "momentum":
                 if ev.verdict is Verdict.BUY:
-                    ranked.append((ev.score, cand, snap, stage, f"score {ev.score}", None))
+                    ranked.append((ev.score, cand, snap, stage, f"score {ev.score}", None, False))
                 continue
             armed = self.armed.get(mint)
             if armed is None:
                 if ev.verdict is Verdict.BUY:
+                    lo = f.pump_pullback_min_pct if ev.pump else f.pullback_min_pct
                     self.armed[mint] = armed = Armed(
                         mint,
                         snap.symbol,
                         snap.price_usd,
                         now,
                         ev.score,
-                        status=f"marcada, busca retroceso de -{f.pullback_min_pct:.0f}%",
+                        status=("🚀 pump sano, " if ev.pump else "")
+                        + f"marcada, busca retroceso de -{lo:.0f}%",
+                        pump=ev.pump,
                     )
                     log.info(
-                        "🎯 Marín marca %s (score %s): espera retroceso", snap.symbol, ev.score
+                        "🎯 Marín marca %s (score %s)%s: espera retroceso",
+                        snap.symbol,
+                        ev.score,
+                        " por excepcion de pump" if ev.pump else "",
                     )
                     self._radar_armed(mint, armed)
                 continue
@@ -276,10 +282,13 @@ class Bot:
                 self.armed.pop(mint, None)
                 self.radar[mint]["armed"] = None
             elif action == "buy":
-                ranked.append((armed.score, cand, snap, stage, armed.status, armed.last_dd))
+                reason = ("pump: " if armed.pump else "") + armed.status
+                ranked.append((armed.score, cand, snap, stage, reason, armed.last_dd, armed.pump))
         ranked.sort(key=lambda r: r[0], reverse=True)
-        for score, cand, snap, stage, reason, pullback in ranked:
-            await self._try_buy(cand, snap, score, stage, reason=reason, pullback_pct=pullback)
+        for score, cand, snap, stage, reason, pullback, pump in ranked:
+            await self._try_buy(
+                cand, snap, score, stage, reason=reason, pullback_pct=pullback, pump=pump
+            )
 
     def _radar_armed(self, mint: str, armed: Armed) -> None:
         if mint in self.radar:
@@ -288,6 +297,7 @@ class Bot:
                 "status": armed.status,
                 "high": armed.high,
                 "since": armed.armed_at,
+                "pump": armed.pump,
             }
 
     def _update_radar(self, cand, snap, score, verdict, reasons, now) -> None:
@@ -331,6 +341,7 @@ class Bot:
         stage: str = "",
         reason: str = "",
         pullback_pct: float | None = None,
+        pump: bool = False,
     ) -> None:
         wallet = await self.trader.wallet_sol()
         ok, why = risk.can_open(cand.mint, self.state, wallet, self.cfg.risk, live=self.cfg.live)
@@ -373,7 +384,7 @@ class Bot:
             stage=stage,
             entry_snapshot={
                 "score": score,
-                "mode": self.cfg.filters.entry_mode,
+                "mode": "pump" if pump else self.cfg.filters.entry_mode,
                 "pullback_pct": None if pullback_pct is None else round(pullback_pct, 1),
                 "mcap": snap.market_cap_usd,
                 "liq": snap.liquidity_usd if snap.liquidity_known else None,

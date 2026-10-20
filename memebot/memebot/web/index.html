@@ -500,7 +500,7 @@ function renderCalendar() {
 // ---------- radar ----------
 // etiqueta de puntaje; si Marin la tiene "en la mira" muestra cuanto ha retrocedido
 function scoreTag(r) {
-  if (r.armed) return `<span class="score tag-armed" title="${esc(r.armed.status)}">🎯 -${Math.max(0, r.armed.dd).toFixed(0)}%</span>`;
+  if (r.armed) return `<span class="score tag-armed" title="${esc(r.armed.status)}">${r.armed.pump ? "🚀" : "🎯"} -${Math.max(0, r.armed.dd).toFixed(0)}%</span>`;
   const c = r.verdict === "BUY" ? "tag-buy" : r.verdict === "REJECT" ? "tag-rej" : "tag-wait";
   return `<span class="score ${c}" title="${esc((r.reasons || []).join(" · "))}">${r.score}</span>`;
 }
@@ -721,6 +721,7 @@ function renderDetail(first) {
     side += `<h3 style="margin:16px 0 8px">Análisis del bot</h3>
       <div class="row"><span class="muted">Puntaje</span><b>${radar.score} / 100</b></div>
       <div class="row"><span class="muted">Veredicto</span><b>${radar.armed ? "🎯 En la mira" : radar.verdict === "BUY" ? "✅ Listo para comprar" : radar.verdict === "REJECT" ? "❌ Descartado" : "⏳ Esperando"}</b></div>
+      ${radar.armed && radar.armed.pump ? `<div class="row"><span class="muted">Tipo</span><b>🚀 Pump con excepción</b></div>` : ""}
       ${radar.armed ? `<div class="row"><span class="muted">Retroceso</span><b class="mono">-${Math.max(0, radar.armed.dd).toFixed(1)}%</b></div>
         <div class="sub" style="margin:4px 0">${esc(radar.armed.status)}</div>` : ""}
       <div class="row"><span class="muted">Etapa</span><b>${esc(STAGE[radar.stage] || "—")}${radar.progress != null && radar.stage !== "migrated" ? " · curva " + Math.round(radar.progress * 100) + "%" : ""}</b></div>
