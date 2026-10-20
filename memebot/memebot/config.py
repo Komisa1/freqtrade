@@ -23,16 +23,17 @@ class SourcesConfig:
 class FilterConfig:
     """Filtros duros: si un token no los cumple, no se compra."""
 
-    min_liquidity_usd: float = 8_000
+    min_liquidity_usd: float = 15_000
     max_liquidity_usd: float = 2_000_000
-    min_market_cap_usd: float = 15_000
+    min_market_cap_usd: float = 30_000
     max_market_cap_usd: float = 3_000_000
     min_age_minutes: float = 3  # evita comprar en el primer bloque (snipers/bundles)
     max_age_minutes: float = 24 * 60
     min_volume_m5_usd: float = 2_000
     min_txns_m5: int = 25
     min_buy_sell_ratio_m5: float = 1.15  # mas compras que ventas en 5 min
-    max_price_change_h1_pct: float = 400  # no perseguir velas verticales
+    max_price_change_h1_pct: float = 150  # no perseguir monedas que ya volaron
+    max_price_change_m5_pct: float = 25  # solo en modo "momentum": no comprar en plena vela
     min_price_change_m5_pct: float = -5
     min_score: float = 60  # puntaje minimo (0-100) del scoring
     # RugCheck
@@ -40,6 +41,14 @@ class FilterConfig:
     rugcheck_max_score_normalised: float = 30  # 0 = limpio, cuanto mas alto, mas riesgo
     rugcheck_reject_levels: list[str] = field(default_factory=lambda: ["danger"])
     rugcheck_required: bool = True  # si RugCheck no responde, no comprar
+    # Entrada. "pullback": cuando un token califica, Marin lo marca y espera a que retroceda
+    # entre pullback_min_pct y pullback_max_pct desde su maximo (con compradores activos)
+    # para comprar mas barato. "momentum": compra en cuanto califica (estrategia v1).
+    entry_mode: str = "pullback"
+    pullback_min_pct: float = 12
+    pullback_max_pct: float = 35
+    pullback_min_buy_sell_ratio: float = 0.9
+    arm_minutes: float = 20  # si en este tiempo no retrocede, se descarta
     # re-evaluacion de tokens que todavia no cumplen (p. ej. muy nuevos)
     watch_minutes: float = 30
     recheck_seconds: float = 20
@@ -52,6 +61,8 @@ class ExitConfig:
     take_profit_ladder: list[list[float]] = field(
         default_factory=lambda: [[2.0, 50.0], [4.0, 25.0]]
     )
+    # al llegar a este multiplo el stop sube al precio de entrada (0 = desactivado)
+    breakeven_after_multiple: float = 1.25
     trailing_activate_multiple: float = 1.5  # el trailing se activa al llegar a 1.5x
     trailing_stop_pct: float = 25  # vender el resto si cae 25% desde el maximo
     max_hold_minutes: float = 240
@@ -192,6 +203,11 @@ def validate(cfg: Config) -> None:
         total += step[1] if len(step) == 2 else 0
     if total > 100:
         errors.append("take_profit_ladder: la suma de porcentajes no puede superar 100")
+    f = cfg.filters
+    if f.entry_mode not in ("pullback", "momentum"):
+        errors.append("filters.entry_mode debe ser 'pullback' o 'momentum'")
+    if not 0 < f.pullback_min_pct < f.pullback_max_pct < 100:
+        errors.append("filters: se necesita 0 < pullback_min_pct < pullback_max_pct < 100")
     if cfg.live and not cfg.private_key:
         errors.append("Modo live requiere SOLANA_PRIVATE_KEY en el archivo .env")
     if errors:
@@ -230,3 +246,50 @@ def set_setting(config_path: Path, key: str, raw_value: str) -> tuple[Any, Any]:
             config_path.write_text(original, encoding="utf-8")
         raise
     return old, value
+
+
+# Ajustes de estrategia que se pueden aplicar de un jalon con: python -m memebot estrategia
+STRATEGY_PRESETS: dict[str, dict[str, dict[str, Any]]] = {
+    "marin-v2": {
+        "filters": {
+            "min_liquidity_usd": 15_000,
+            "min_market_cap_usd": 30_000,
+            "max_price_change_h1_pct": 150,
+            "max_price_change_m5_pct": 25,
+            "entry_mode": "pullback",
+            "pullback_min_pct": 12,
+            "pullback_max_pct": 35,
+            "pullback_min_buy_sell_ratio": 0.9,
+            "arm_minutes": 20,
+        },
+        "exits": {"breakeven_after_multiple": 1.25},
+    },
+}
+
+
+def preset_changes(config_path: Path, preset: str) -> list[tuple[str, Any, Any]]:
+    """Lista de (ajuste, valor_actual, valor_nuevo) que cambiaria el preset."""
+    current = load_config(config_path if config_path.exists() else None, env_file=None)
+    out = []
+    for section, values in STRATEGY_PRESETS[preset].items():
+        for key, new in values.items():
+            old = getattr(getattr(current, section), key)
+            if old != new:
+                out.append((f"{section}.{key}", old, new))
+    return out
+
+
+def apply_preset(config_path: Path, preset: str) -> None:
+    original = config_path.read_text(encoding="utf-8") if config_path.exists() else None
+    data = json.loads(original) if original else {}
+    for section, values in STRATEGY_PRESETS[preset].items():
+        data.setdefault(section, {}).update(values)
+    config_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    try:
+        load_config(config_path, env_file=None)
+    except Exception:
+        if original is None:
+            config_path.unlink()
+        else:
+            config_path.write_text(original, encoding="utf-8")
+        raise

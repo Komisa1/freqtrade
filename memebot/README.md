@@ -1,4 +1,4 @@
-# memebot: bot de meme coins en Solana
+# Marín (memebot): bot de meme coins en Solana
 
 Bot que detecta meme coins nuevas en Solana (pump.fun y DexScreener; GMGN opcional), descarta las que tienen pinta de rug, compra las que muestran impulso real y las vende con stop loss, toma de ganancias escalonada y trailing stop.
 
@@ -35,6 +35,20 @@ GMGN trending (opcional) ───────┘        (re-evalúa cada 20 s, 
    - **Salida por tiempo**: vende si en 45 min no hizo +10 %, y como máximo a las 4 h.
    - **Salida de emergencia**: vende si la liquidez se desploma (posible rug).
 6. **Ejecución (modo live).** Opera vía **Jupiter**, que encuentra la mejor ruta en todos los DEX, incluida la bonding curve de pump.fun. Opcionalmente puede usar la API de trading de PumpPortal. La transacción se **firma en tu computadora**: la clave privada nunca se envía a ningún servidor.
+
+## Estrategia Marín v2 (entrada en retroceso)
+
+En la primera simulación casi todas las pérdidas fueron stop loss justo después de comprar: el bot compraba en el pico de la vela. La v2 cambia la entrada:
+
+1. Cuando una moneda califica (filtros + puntaje), Marín **no compra todavía**: la pone **"en la mira" 🎯** y guarda su máximo.
+2. Compra cuando la moneda **retrocede entre 12% y 35%** desde ese máximo y todavía hay compradores (compras/ventas ≥ 0.9). Si cae más de 35% o pasan 20 minutos sin retroceso, la descarta.
+3. Ya no persigue monedas que subieron más de **150% en 1 hora**, y pide **$15k de liquidez** y **$30k de market cap** como mínimo.
+4. Si una posición llega a **1.25x**, el stop sube a precio de entrada (breakeven).
+5. Guarda **cómo estaba cada moneda al comprarla**. El `report` y la pestaña Cerradas comparan **ganadoras vs perdedoras**, para ajustar con datos.
+
+Para aplicarla a un `config.json` existente: `python -m memebot estrategia` (muestra los cambios y pide confirmar). Para volver a la v1: `python -m memebot set filters.entry_mode momentum`.
+
+No hay estrategia garantizada: esto es una hipótesis que la simulación tiene que confirmar.
 
 ## Instalación (mañana en tu compu)
 
@@ -135,7 +149,12 @@ El bot te avisa de cada compra, venta parcial y cierre, con el PnL.
 | `risk.max_daily_loss_sol` | 0.5 | Al perder esto en el día, deja de comprar |
 | `filters.min_score` | 60 | Más alto = menos trades, más selectivos |
 | `filters.min_age_minutes` | 3 | Más bajo = entra antes, pero con más riesgo de rug |
-| `filters.min_liquidity_usd` | 8000 | Liquidez mínima |
+| `filters.min_liquidity_usd` | 15000 | Liquidez mínima |
+| `filters.min_market_cap_usd` | 30000 | No compra monedas más chicas que esto |
+| `filters.max_price_change_h1_pct` | 150 | No persigue monedas que ya subieron más que esto en 1 h |
+| `filters.entry_mode` | `pullback` | `pullback` = espera retroceso; `momentum` = compra en cuanto califica (v1) |
+| `filters.pullback_min_pct` / `pullback_max_pct` | 12 / 35 | Rango de retroceso desde el máximo para comprar |
+| `exits.breakeven_after_multiple` | 1.25 | Al llegar a este múltiplo, el stop sube a la entrada |
 | `filters.max_market_cap_usd` | 3,000,000 | No compra tokens más grandes que esto |
 | `exits.stop_loss_pct` | 30 | Stop loss |
 | `exits.take_profit_ladder` | `[[2,50],[4,25]]` | `[múltiplo, % de la posición a vender]` |

@@ -13,16 +13,17 @@
     "gmgn_poll_seconds": 60
   },
   "filters": {
-    "min_liquidity_usd": 8000,
+    "min_liquidity_usd": 15000,
     "max_liquidity_usd": 2000000,
-    "min_market_cap_usd": 15000,
+    "min_market_cap_usd": 30000,
     "max_market_cap_usd": 3000000,
     "min_age_minutes": 3,
     "max_age_minutes": 1440,
     "min_volume_m5_usd": 2000,
     "min_txns_m5": 25,
     "min_buy_sell_ratio_m5": 1.15,
-    "max_price_change_h1_pct": 400,
+    "max_price_change_h1_pct": 150,
+    "max_price_change_m5_pct": 25,
     "min_price_change_m5_pct": -5,
     "min_score": 60,
     "rugcheck": true,
@@ -31,6 +32,11 @@
       "danger"
     ],
     "rugcheck_required": true,
+    "entry_mode": "pullback",
+    "pullback_min_pct": 12,
+    "pullback_max_pct": 35,
+    "pullback_min_buy_sell_ratio": 0.9,
+    "arm_minutes": 20,
     "watch_minutes": 30,
     "recheck_seconds": 20
   },
@@ -46,6 +52,7 @@
         25.0
       ]
     ],
+    "breakeven_after_multiple": 1.25,
     "trailing_activate_multiple": 1.5,
     "trailing_stop_pct": 25,
     "max_hold_minutes": 240,

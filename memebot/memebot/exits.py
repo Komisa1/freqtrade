@@ -26,13 +26,17 @@ def decide_exit(
     if liquidity_usd is not None and liquidity_usd < cfg.min_liquidity_usd_exit:
         return ExitAction(1.0, f"liquidez cayo a ${liquidity_usd:,.0f} (posible rug)")
 
-    # stop loss; despues de la primera toma de ganancias el stop sube a la entrada (breakeven)
-    stop_mult = 1.0 if pos.tp_done else 1 - cfg.stop_loss_pct / 100
+    # stop loss; despues de la primera toma de ganancias, o si ya llego a
+    # breakeven_after_multiple, el stop sube a la entrada (breakeven)
+    peak_mult = pos.multiple(max(pos.peak_price_usd, price))
+    protected = bool(pos.tp_done) or (
+        cfg.breakeven_after_multiple > 0 and peak_mult >= cfg.breakeven_after_multiple
+    )
+    stop_mult = 1.0 if protected else 1 - cfg.stop_loss_pct / 100
     if mult <= stop_mult:
-        label = "breakeven" if pos.tp_done else f"stop loss -{cfg.stop_loss_pct:.0f}%"
+        label = "breakeven" if protected else f"stop loss -{cfg.stop_loss_pct:.0f}%"
         return ExitAction(1.0, f"{label} ({mult:.2f}x)")
 
-    peak_mult = pos.multiple(max(pos.peak_price_usd, price))
     if peak_mult >= cfg.trailing_activate_multiple:
         drawdown = (1 - price / max(pos.peak_price_usd, price)) * 100
         if drawdown >= cfg.trailing_stop_pct:

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>memebot</title>
+<title>Marín</title>
 <link rel="icon" href="data:,">
 <script src="/static/lightweight-charts.js"></script>
 <style>
@@ -53,6 +53,8 @@ header { display: flex; align-items: center; gap: 16px; padding: 10px 16px;
 .tag-buy { background: var(--green-bg); color: var(--green); }
 .tag-wait { background: var(--panel2); color: var(--muted); }
 .tag-rej { background: var(--red-bg); color: var(--red); }
+.tag-armed { background: rgba(240,185,11,.15); color: var(--yellow); }
+.cmp td:first-child { color: var(--muted); }
 .filters { display: flex; gap: 4px; }
 .chip { background: var(--panel2); border: 1px solid var(--line); color: var(--muted); border-radius: 6px;
   padding: 3px 8px; font-size: 11px; cursor: pointer; }
@@ -227,7 +229,7 @@ td { padding: 10px 14px; border-top: 1px solid var(--line); white-space: nowrap;
 </head>
 <body>
 <header>
-  <div class="logo">meme<span>bot</span></div>
+  <div class="logo">Marín <span>bot</span></div>
   <span id="mode" class="badge paper">SIMULACIÓN</span>
   <span class="hstat"><span id="dot" class="dot"></span><span id="conn">conectando…</span></span>
   <span class="buystat" id="buystat"></span>
@@ -430,7 +432,7 @@ function render() {
   const bs = document.getElementById("buystat");
   const ago = S.last_eval_at ? Math.max(0, Math.round(S.now - S.last_eval_at)) : null;
   if (S.buy_block) { bs.className = "buystat paused"; bs.textContent = "⏸️ No compra: " + S.buy_block; }
-  else { bs.className = "buystat"; bs.textContent = "🟢 Buscando para comprar" + (ago != null ? ` · analizó hace ${ago}s` : ""); }
+  else { bs.className = "buystat"; bs.textContent = "🟢 Buscando para comprar" + (S.armed_count ? ` · 🎯 ${S.armed_count} en la mira` : "") + (ago != null ? ` · analizó hace ${ago}s` : ""); }
   setText("watching", S.stats.watching); setText("seen", S.stats.seen);
   setText("bought", S.stats.bought); setText("rugs", S.stats.rug_rejected);
   document.getElementById("wallet").innerHTML = S.wallet
@@ -496,20 +498,44 @@ function renderCalendar() {
 }
 
 // ---------- radar ----------
+// etiqueta de puntaje; si Marin la tiene "en la mira" muestra cuanto ha retrocedido
+function scoreTag(r) {
+  if (r.armed) return `<span class="score tag-armed" title="${esc(r.armed.status)}">🎯 -${Math.max(0, r.armed.dd).toFixed(0)}%</span>`;
+  const c = r.verdict === "BUY" ? "tag-buy" : r.verdict === "REJECT" ? "tag-rej" : "tag-wait";
+  return `<span class="score ${c}" title="${esc((r.reasons || []).join(" · "))}">${r.score}</span>`;
+}
+function statsTable(title, rows, firstCol) {
+  if (!rows || !rows.length) return "";
+  return `<div class="stage-stats"><h3 style="margin:0 0 6px">${title}</h3><table>
+    <thead><tr><th>${firstCol}</th><th>Trades</th><th>Aciertos</th><th>PnL</th><th>Rendimiento</th><th>Mejor</th></tr></thead><tbody>` +
+    rows.map(s => `<tr><td>${esc(s.label)}</td><td class="mono">${s.trades}</td>
+      <td class="mono">${Math.round(100 * s.wins / s.trades)}% (${s.wins}/${s.trades})</td>
+      <td class="mono ${cls(s.pnl_sol)}">${psol(s.pnl_sol)}</td><td class="mono ${cls(s.roi_pct)}">${pct(s.roi_pct)}</td>
+      <td class="mono">${s.best_x.toFixed(2)}x</td></tr>`).join("") + "</tbody></table></div>";
+}
+function compareTable(c) {
+  if (!c || !c.rows.length) return "";
+  const f = v => v == null ? "—" : Math.abs(v) >= 1000 ? usd(v).replace("$", "") : (+v).toFixed(Math.abs(v) < 10 ? 2 : 1);
+  return `<div class="stage-stats"><h3 style="margin:0 0 2px">Ganadoras vs perdedoras al comprar</h3>
+    <div class="sub" style="margin-bottom:6px">Mediana de cómo estaba cada moneda al comprarla · ${c.wins} ganadoras, ${c.losses} perdedoras</div>
+    <table class="cmp"><thead><tr><th>Dato</th><th>Ganadoras</th><th>Perdedoras</th></tr></thead><tbody>` +
+    c.rows.map(r => `<tr><td>${esc(r.label)}</td><td class="mono up">${f(r.win)}</td><td class="mono down">${f(r.loss)}</td></tr>`).join("") +
+    "</tbody></table></div>";
+}
+
 function renderRadar() {
   let rows = S.radar;
-  if (radarFilter === "BUY") rows = rows.filter(r => r.verdict === "BUY");
+  if (radarFilter === "BUY") rows = rows.filter(r => r.verdict === "BUY" || r.armed);
   if (radarFilter === "new") rows = [...rows].sort((a, b) => a.age_min - b.age_min);
   const el = document.getElementById("radar");
   if (!rows.length) { el.innerHTML = '<div class="empty">Buscando monedas…<br><span class="sub">Aparecen aquí cuando el bot las evalúa</span></div>'; return; }
   el.innerHTML = rows.map(r => {
-    const tagc = r.verdict === "BUY" ? "tag-buy" : r.verdict === "REJECT" ? "tag-rej" : "tag-wait";
     return `<div class="rrow" data-mint="${esc(r.mint)}">
       ${avatar(r.symbol, r.mint)}
       <div style="min-width:0"><div class="sym">${esc(r.symbol)}${stg(r.stage)}</div>
         <div class="sub">${usd(r.mcap)} MC · ${dur(r.age_min * 60)} · ${r.buys_m5}/${r.sells_m5}</div></div>
       <div style="text-align:right"><div class="${cls(r.chg_m5)} mono">${pct(r.chg_m5)}</div>
-        <span class="score ${tagc}" title="${esc(r.reasons.join(' · '))}">${r.score}</span></div>
+        ${scoreTag(r)}</div>
     </div>`;
   }).join("");
 }
@@ -555,13 +581,9 @@ function renderTab() {
       <td class="mono">${dur(p.close_time - p.entry_time)}<div class="sub">${new Date(p.close_time * 1000).toLocaleString()}</div></td></tr>`;
   }).join("");
   let stats = "";
-  if (tab === "closed" && S.stage_stats.length) {
-    stats = `<div class="stage-stats"><h3 style="margin:0 0 6px">Resultados por etapa</h3><table>
-      <thead><tr><th>Etapa</th><th>Trades</th><th>Aciertos</th><th>PnL</th><th>Rendimiento</th><th>Mejor</th></tr></thead><tbody>` +
-      S.stage_stats.map(s => `<tr><td>${esc(s.label)}</td><td class="mono">${s.trades}</td>
-        <td class="mono">${Math.round(100 * s.wins / s.trades)}% (${s.wins}/${s.trades})</td>
-        <td class="mono ${cls(s.pnl_sol)}">${psol(s.pnl_sol)}</td><td class="mono ${cls(s.roi_pct)}">${pct(s.roi_pct)}</td>
-        <td class="mono">${s.best_x.toFixed(2)}x</td></tr>`).join("") + "</tbody></table></div>";
+  if (tab === "closed") {
+    stats = statsTable("Resultados por etapa", S.stage_stats, "Etapa") +
+      statsTable("Resultados por forma de entrada", S.mode_stats, "Entrada") + compareTable(S.compare);
   }
   el.innerHTML = stats + `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
@@ -698,7 +720,9 @@ function renderDetail(first) {
   if (radar) {
     side += `<h3 style="margin:16px 0 8px">Análisis del bot</h3>
       <div class="row"><span class="muted">Puntaje</span><b>${radar.score} / 100</b></div>
-      <div class="row"><span class="muted">Veredicto</span><b>${radar.verdict === "BUY" ? "✅ Listo para comprar" : radar.verdict === "REJECT" ? "❌ Descartado" : "⏳ Esperando"}</b></div>
+      <div class="row"><span class="muted">Veredicto</span><b>${radar.armed ? "🎯 En la mira" : radar.verdict === "BUY" ? "✅ Listo para comprar" : radar.verdict === "REJECT" ? "❌ Descartado" : "⏳ Esperando"}</b></div>
+      ${radar.armed ? `<div class="row"><span class="muted">Retroceso</span><b class="mono">-${Math.max(0, radar.armed.dd).toFixed(1)}%</b></div>
+        <div class="sub" style="margin:4px 0">${esc(radar.armed.status)}</div>` : ""}
       <div class="row"><span class="muted">Etapa</span><b>${esc(STAGE[radar.stage] || "—")}${radar.progress != null && radar.stage !== "migrated" ? " · curva " + Math.round(radar.progress * 100) + "%" : ""}</b></div>
       <div class="row"><span class="muted">Compras/ventas 5m</span><b class="mono">${radar.buys_m5} / ${radar.sells_m5}</b></div>
       <div class="row"><span class="muted">Volumen 5m</span><b class="mono">${usd(radar.vol_m5)}</b></div>
@@ -762,8 +786,7 @@ function renderTrenches() {
       const prog = r.progress == null ? null : Math.round(r.progress * 100);
       const right = r.score != null
         ? `<div class="${cls(r.chg_m5)} mono">${pct(r.chg_m5)}</div>
-           <span class="score ${r.verdict === "BUY" ? "tag-buy" : r.verdict === "REJECT" ? "tag-rej" : "tag-wait"}"
-             title="${esc((r.reasons || []).join(" · "))}">${r.score}</span>`
+           ${scoreTag(r)}`
         : `<span class="sub">sin datos aún</span>`;
       const meta = r.score != null
         ? `${usd(r.mcap)} MC · ${r.liq == null ? "curva" : usd(r.liq) + " liq"} · ${r.buys_m5}/${r.sells_m5}`
@@ -823,6 +846,8 @@ const CRAB = {
   ],
   idle: [
     "Buscando buenas monedas… llevo {seen} vistas 🔎", "Vigilando el radar 👀", "Esperando un buen runner… 🎣",
+    "Tengo {armed} en la mira 🎯, espero que bajen tantito para comprar más barato",
+    "No compro en el pico, espero el retroceso 😉",
     "Ninguna me convence todavía, mejor esperar que comprar basura 🗑️",
   ],
   win: ["¡ESOOO! {sym} cerró con {pnl} 🎉🎉", "¡Profit! {sym} nos dejó {pnl} 💰", "¡Golazo con {sym}! {pnl} 🥳"],
@@ -989,10 +1014,12 @@ function crabMood() {
   crab.className = "crab " + mood + (mascotUrl ? " has-img" : "");
   if (Date.now() - crabMsgAt < 20000) return;
   const best = [...S.open].sort((a, b) => b.multiple - a.multiple)[0];
-  const d = {pnl: psol(pnl, 3), seen: S.stats.seen, best: best ? best.symbol : "", x: best ? best.multiple.toFixed(2) + "x" : ""};
+  const d = {pnl: psol(pnl, 3), seen: S.stats.seen, armed: S.armed_count, best: best ? best.symbol : "", x: best ? best.multiple.toFixed(2) + "x" : ""};
   let pool = mood === "happy" ? CRAB.happy : mood === "sad" ? CRAB.sad : CRAB.idle;
   if (S.buy_block && Math.random() < 0.5) pool = [`Ahorita no estoy comprando: ${S.buy_block} ⏸️`];
   if (!best) pool = pool.filter(t => !t.includes("{best}"));
+  if (!S.armed_count) pool = pool.filter(t => !t.includes("{armed}"));
+  if (!pool.length) pool = CRAB.idle.filter(t => !t.includes("{armed}"));
   setCrab(fill(pick(pool), d));
 }
 document.getElementById("crab").addEventListener("click", () => {

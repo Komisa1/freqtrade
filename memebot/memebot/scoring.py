@@ -88,6 +88,8 @@ def evaluate(s: TokenSnapshot, cfg: FilterConfig, now: float | None = None) -> E
         soft.append(f"compras/ventas 5m bajo ({s.buy_sell_ratio_m5:.2f})")
     if s.change_h1 > cfg.max_price_change_h1_pct:
         soft.append(f"ya subio demasiado ({s.change_h1:.0f}% en 1h)")
+    if cfg.entry_mode == "momentum" and s.change_m5 > cfg.max_price_change_m5_pct:
+        soft.append(f"subiendo muy rapido ({s.change_m5:.0f}% en 5m)")
     if s.change_m5 < cfg.min_price_change_m5_pct:
         soft.append(f"cayendo ({s.change_m5:.0f}% en 5m)")
     if score < cfg.min_score:
