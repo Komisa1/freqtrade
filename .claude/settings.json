@@ -1,0 +1,19 @@
+{
+  "env": {
+    "DO_NOT_TRACK": "1",
+    "HYPERFRAMES_NO_TELEMETRY": "1"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/instalar-skills.sh\" || true",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}

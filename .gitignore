@@ -1,0 +1,7 @@
+# las skills se descargan de sus repos oficiales (scripts/instalar-skills.sh)
+.claude/skills/
+node_modules/
+renders/
+.hyperframes/
+*.mp4
+!ejemplos/**/muestra.mp4

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Marin bot - promo</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      body { margin: 0; background: #0b0b10; color: #f2f2f7; font-family: system-ui, sans-serif; }
+      #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: radial-gradient(circle at 50% 40%, #1d1430 0%, #0b0b10 60%); }
+      .clip { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+      .glow { position: absolute; width: 900px; height: 900px; left: 510px; top: 90px; border-radius: 50%;
+        background: radial-gradient(circle, rgba(255,107,61,.35) 0%, rgba(255,107,61,0) 65%); }
+      .title { font-size: 190px; font-weight: 900; letter-spacing: -4px; margin: 0; }
+      .title span { color: #a6f05a; }
+      .subtitle { font-size: 52px; color: #b9b9c8; margin-top: 10px; }
+      .cards { display: flex; gap: 48px; }
+      .card { width: 480px; height: 300px; border-radius: 28px; background: #17171f; border: 2px solid #2a2a36;
+        display: flex; flex-direction: column; justify-content: center; padding: 0 44px; box-sizing: border-box; }
+      .card .k { font-size: 30px; color: #8b8b98; text-transform: uppercase; letter-spacing: 3px; }
+      .card .v { font-size: 58px; font-weight: 800; margin-top: 12px; line-height: 1.1; }
+      .v.g { color: #2ebd85; } .v.y { color: #f0b90b; } .v.o { color: #ff6b3d; }
+      .head { font-size: 64px; font-weight: 800; margin-bottom: 70px; }
+      .big { font-size: 300px; font-weight: 900; color: #2ebd85; margin: 0; letter-spacing: -8px; }
+      .note { font-size: 54px; color: #f2f2f7; margin-top: 10px; }
+      .small { font-size: 34px; color: #8b8b98; margin-top: 30px; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-width="1920" data-height="1080" data-duration="9">
+      <section id="s1" class="clip" data-start="0" data-duration="3">
+        <div class="glow" id="s1-glow"></div>
+        <h1 class="title" id="s1-title">Marín <span>bot</span></h1>
+        <div class="subtitle" id="s1-sub">Tu bot de meme coins en Solana</div>
+      </section>
+      <section id="s2" class="clip" data-start="3" data-duration="3">
+        <div class="head" id="s2-head">Cómo opera</div>
+        <div class="cards">
+          <div class="card" id="c1"><div class="k">Entrada</div><div class="v y">Compra en el retroceso</div></div>
+          <div class="card" id="c2"><div class="k">Protección</div><div class="v o">Stop loss automático</div></div>
+          <div class="card" id="c3"><div class="k">Salida</div><div class="v g">Toma ganancias sola</div></div>
+        </div>
+      </section>
+      <section id="s3" class="clip" data-start="6" data-duration="3">
+        <h2 class="big" id="s3-num">+0%</h2>
+        <div class="note" id="s3-note">Mejor operación en simulación</div>
+        <div class="small" id="s3-small">Primero simulación, después dinero real</div>
+      </section>
+    </div>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      // escena 1: titulo
+      tl.fromTo("#s1-glow", { scale: 0.4, opacity: 0 }, { scale: 1, opacity: 1, duration: 1.2, ease: "power2.out" }, 0);
+      tl.fromTo("#s1-title", { y: 80, opacity: 0, scale: 0.9 }, { y: 0, opacity: 1, scale: 1, duration: 0.8, ease: "back.out(1.7)" }, 0.2);
+      tl.fromTo("#s1-sub", { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6, ease: "power3.out" }, 0.8);
+      tl.to(["#s1-title", "#s1-sub"], { opacity: 0, y: -40, duration: 0.4, ease: "power2.in" }, 2.55);
+      // escena 2: tarjetas
+      tl.fromTo("#s2-head", { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: "power3.out" }, 3.1);
+      tl.fromTo(["#c1", "#c2", "#c3"], { y: 120, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6, ease: "power3.out", stagger: 0.18 }, 3.3);
+      tl.to(["#s2-head", "#c1", "#c2", "#c3"], { opacity: 0, y: -30, duration: 0.4, ease: "power2.in" }, 5.55);
+      // escena 3: contador
+      const counter = { v: 0 };
+      const num = document.getElementById("s3-num");
+      tl.fromTo("#s3-num", { scale: 0.7, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.5, ease: "back.out(2)" }, 6.1);
+      tl.fromTo(counter, { v: 0 }, { v: 122, duration: 1.2, ease: "power2.out",
+        onUpdate: () => { num.textContent = "+" + Math.round(counter.v) + "%"; } }, 6.1);
+      tl.fromTo("#s3-note", { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: "power3.out" }, 6.7);
+      tl.fromTo("#s3-small", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 7.3);
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>
