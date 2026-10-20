@@ -290,6 +290,12 @@ class Bot:
                 cand, snap, score, stage, reason=reason, pullback_pct=pullback, pump=pump
             )
 
+    def _entry_mode_label(self) -> str:
+        f = self.cfg.filters
+        if f.entry_mode == "pullback" and f.pullback_bounce_pct > 0:
+            return "rebote"  # v3
+        return f.entry_mode
+
     def _radar_armed(self, mint: str, armed: Armed) -> None:
         if mint in self.radar:
             self.radar[mint]["armed"] = {
@@ -384,7 +390,7 @@ class Bot:
             stage=stage,
             entry_snapshot={
                 "score": score,
-                "mode": "pump" if pump else self.cfg.filters.entry_mode,
+                "mode": "pump" if pump else self._entry_mode_label(),
                 "pullback_pct": None if pullback_pct is None else round(pullback_pct, 1),
                 "mcap": snap.market_cap_usd,
                 "liq": snap.liquidity_usd if snap.liquidity_known else None,
