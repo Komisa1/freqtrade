@@ -5,9 +5,13 @@
   "type": "module",
   "description": "Bucle de renderizado headless: pinta cada fotograma en Chrome, lo captura y lo une en un MP4 con ffmpeg",
   "scripts": {
-    "render": "node render.mjs"
+    "render": "node render.mjs",
+    "setup": "./setup.sh"
   },
   "dependencies": {
-    "playwright": "1.56.1"
+    "playwright": "^1.64.1"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

@@ -15,8 +15,14 @@ El tiempo lo marca el bucle externo (`time = frame / fps`), no el reloj de pared
 
 ## Requisitos
 
-- Node 18+ y `ffmpeg` en el `PATH`
-- `npm install` (instala Playwright; usa `/opt/pw-browsers/chromium` si existe, si no ejecuta `npx playwright install chromium`)
+Versiones probadas: **Node.js 24.22.0 LTS**, **FFmpeg 9.0.2**, **Playwright 1.64.1** (Chrome for Testing 156).
+
+Para instalarlo todo en una máquina o contenedor nuevo:
+
+```bash
+./setup.sh
+export PATH="$HOME/.local/bin:$PATH"
+```
 
 ## Uso
 
