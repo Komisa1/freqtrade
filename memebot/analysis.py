@@ -20,6 +20,7 @@ FEATURES: list[tuple[str, str]] = [
     ("liq", "Liquidez ($)"),
     ("age_min", "Edad (min)"),
     ("ratio", "Compras/ventas 5 min"),
+    ("regime", "Regimen del mercado (0-100)"),
 ]
 MODE_LABELS = {
     "rebote": "Rebote confirmado (v3)",

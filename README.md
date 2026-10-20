@@ -45,6 +45,10 @@ Ajustes hechos con 85 operaciones simuladas (28% de aciertos, -18% con la v2):
 - Las ganancias se escapaban (llegaban a 1.5–1.7x y salían en ~1.05x): take profit **40% a 1.5x, 30% a 2.5x y 15% a 5x**, trailing desde **1.3x** con **-18%**.
 - Stop loss **-22%** y revisión de precio **cada 2 s** (antes -30% y cada 5 s; los stops salían muy tarde).
 
+- **Régimen del mercado** (arriba en el panel, "Mercado 🟢 62"): puntaje 0–100 que combina la tendencia de SOL, SOL y BTC hoy, y cuántas meme coins del radar van subiendo. Por ahora solo se mide y se guarda en cada compra; cuando haya datos se decide si filtrar con `risk.regime_min_score`. Inspirado en `crypto-regime-analyzer` de [claude-trading-skills](https://github.com/tradermonty/claude-trading-skills) (MIT).
+- **Freno por racha** (solo en real): tras 4 pérdidas seguidas, pausa 1 hora (`risk.max_consecutive_losses`, `risk.streak_pause_minutes`).
+- **Simulación más pesimista:** 3% de costo por operación en vez de 2% (`execution.paper_slippage_pct`), para que un resultado verde sea más creíble en real.
+
 Aplicarla: `python -m memebot estrategia` (o `estrategia marin-v2` para volver a la anterior). En el reporte sale como **"Rebote confirmado (v3)"**.
 
 ## Estrategia Marín v2 (entrada en retroceso), anterior

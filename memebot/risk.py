@@ -15,6 +15,7 @@ def can_open(
     cfg: RiskConfig,
     now: float | None = None,
     live: bool = True,
+    regime_score: float | None = None,
 ) -> tuple[bool, str]:
     now = now or time.time()
     if mint in state.positions:
@@ -34,6 +35,22 @@ def can_open(
         total = sum(p.realized_pnl_sol for p in state.closed)
         if total <= -cfg.max_total_loss_sol:
             return False, f"tope de perdida total alcanzado ({total:.3f} SOL)"
+    if live and cfg.max_consecutive_losses > 0 and state.closed:
+        streak = 0
+        for p in reversed(state.closed):
+            if p.realized_pnl_sol > 0:
+                break
+            streak += 1
+        last = state.closed[-1].close_time
+        if streak >= cfg.max_consecutive_losses and now - last < cfg.streak_pause_minutes * 60:
+            left = (cfg.streak_pause_minutes * 60 - (now - last)) / 60
+            return False, f"racha de {streak} perdidas seguidas: pausa ({left:.0f} min)"
+    if (
+        cfg.regime_min_score > 0
+        and regime_score is not None
+        and regime_score < cfg.regime_min_score
+    ):
+        return False, f"mercado en contra (regimen {regime_score:.0f} < {cfg.regime_min_score:.0f})"
     if cfg.max_capital_sol > 0:
         in_use = sum(p.sol_spent - p.sol_received for p in state.positions.values())
         # margen del 3% para que las comisiones de cada compra no bloqueen la ultima posicion

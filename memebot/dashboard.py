@@ -170,6 +170,7 @@ def build_state(bot: Bot) -> dict[str, Any]:
         "mode_stats": mode_stats(closed_all),
         "compare": compare_winners_losers(closed_all),
         "armed_count": len(bot.armed),
+        "regime": bot.regime.current,
         "entry_mode": bot.cfg.filters.entry_mode,
         "buy_stages": bot.state.buy_stages,
         "buy_block": bot.buy_block,
