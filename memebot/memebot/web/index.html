@@ -233,6 +233,7 @@ td { padding: 10px 14px; border-top: 1px solid var(--line); white-space: nowrap;
   <span id="mode" class="badge paper">SIMULACIÓN</span>
   <span class="hstat"><span id="dot" class="dot"></span><span id="conn">conectando…</span></span>
   <span class="buystat" id="buystat"></span>
+  <span class="hstat" id="regime" title=""></span>
   <span class="hstat">SOL <b id="solusd">—</b></span>
   <span class="hstat">Vigilando <b id="watching">0</b></span>
   <span class="hstat">Vistos <b id="seen">0</b></span>
@@ -429,6 +430,14 @@ function render() {
   const m = document.getElementById("mode");
   m.textContent = live ? "DINERO REAL" : "SIMULACIÓN"; m.className = "badge " + (live ? "live" : "paper");
   setText("solusd", S.sol_usd ? usd(S.sol_usd) : "—");
+  const rg = document.getElementById("regime"), R = S.regime || {};
+  if (R.score == null) { rg.innerHTML = "Mercado <b>…</b>"; rg.title = "Calculando (necesita unos minutos de datos)"; }
+  else {
+    const ic = R.zone === "a favor" ? "🟢" : R.zone === "en contra" ? "🔴" : "🟡";
+    rg.innerHTML = `Mercado <b>${ic} ${Math.round(R.score)}</b>`;
+    const L = {sol_trend: "Tendencia SOL", sol_24h: "SOL hoy", btc_24h: "BTC hoy", meme_breadth: "Meme coins subiendo"};
+    rg.title = `Régimen ${R.zone} (0-100)\n` + Object.entries(R.parts || {}).map(([k, v]) => `${L[k] || k}: ${v == null ? "sin dato" : Math.round(v)}`).join("\n");
+  }
   const bs = document.getElementById("buystat");
   const ago = S.last_eval_at ? Math.max(0, Math.round(S.now - S.last_eval_at)) : null;
   if (S.buy_block) { bs.className = "buystat paused"; bs.textContent = "⏸️ No compra: " + S.buy_block; }

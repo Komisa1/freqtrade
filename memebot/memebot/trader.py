@@ -33,7 +33,7 @@ class PaperTrader:
         self.cfg = cfg
         self.balance_sol = cfg.paper_starting_sol
         # costo estimado por operacion: slippage medio + fee de DEX
-        self.cost_pct = 0.02
+        self.cost_pct = cfg.execution.paper_slippage_pct / 100
         self.fee_sol = cfg.execution.priority_fee_sol + 0.000005
 
     async def wallet_sol(self) -> float:

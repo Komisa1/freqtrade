@@ -100,6 +100,11 @@ class RiskConfig:
     # Topes para cuando el bot usa tu wallet personal (0 = sin tope):
     max_capital_sol: float = 0  # SOL maximos metidos en posiciones abiertas a la vez
     max_total_loss_sol: float = 0  # si la perdida acumulada llega a esto, deja de comprar
+    # Freno por racha (solo en real): tras N perdidas seguidas, pausa (0 = desactivado)
+    max_consecutive_losses: int = 4
+    streak_pause_minutes: float = 60
+    # Regimen del mercado (0-100): no comprar si esta por debajo (0 = solo medir, no filtrar)
+    regime_min_score: float = 0
 
 
 @dataclass
@@ -110,6 +115,9 @@ class ExecutionConfig:
     jupiter_base_url: str = "https://lite-api.jup.ag/swap/v1"
     confirm_timeout_seconds: float = 60
     price_poll_seconds: float = 2
+    # costo simulado por operacion (slippage + fee del DEX) en modo simulacion. Pesimista a
+    # proposito: si la estrategia gana asi, es mas creible en real (backtest-expert)
+    paper_slippage_pct: float = 3
 
 
 @dataclass
@@ -309,7 +317,7 @@ STRATEGY_PRESETS: dict[str, dict[str, dict[str, Any]]] = {
             "trailing_activate_multiple": 1.3,
             "trailing_stop_pct": 18,
         },
-        "execution": {"price_poll_seconds": 2},
+        "execution": {"price_poll_seconds": 2, "paper_slippage_pct": 3},
     },
 }
 

@@ -7,3 +7,6 @@ __pycache__/
 
 # imagen propia de mascota (no se sube a GitHub)
 mascota.*
+
+# skills descargadas por scripts/instalar-skills-analisis.sh
+.claude/skills/

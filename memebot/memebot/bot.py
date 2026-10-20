@@ -15,6 +15,7 @@ from .entry import Armed, check_pullback
 from .exits import ExitAction, decide_exit
 from .models import WSOL_MINT, Candidate, Position, TokenSnapshot
 from .notifier import Notifier
+from .regime import RegimeTracker
 from .safety import RugCheck
 from .scoring import Verdict, evaluate
 from .sources.dexscreener import DexScreener, poll_dexscreener
@@ -41,6 +42,7 @@ class Bot:
         self.state = State(cfg.data_dir, self.mode)
         self.dex = DexScreener(session)
         self.rugcheck = RugCheck(session, cfg.filters)
+        self.regime = RegimeTracker(session)
         self.notifier = Notifier(session, cfg.telegram_token, cfg.telegram_chat_id)
         if cfg.live:
             self.trader: LiveTrader | PaperTrader = LiveTrader(cfg, session)
@@ -99,6 +101,7 @@ class Bot:
             asyncio.create_task(self._status_loop(), name="status"),
             asyncio.create_task(self._sol_price_loop(), name="sol-price"),
             asyncio.create_task(self._equity_loop(), name="equity"),
+            asyncio.create_task(self._regime_loop(), name="regime"),
         ]
         if self.cfg.dashboard.enabled:
             from .dashboard import start_dashboard
@@ -166,7 +169,12 @@ class Bot:
         """Revisa los limites globales (no los de un token puntual) para mostrar en el panel
         si el bot esta en pausa y por que."""
         ok, why = risk.can_open(
-            "__probe__", self.state, self.last_wallet_sol, self.cfg.risk, live=self.cfg.live
+            "__probe__",
+            self.state,
+            self.last_wallet_sol,
+            self.cfg.risk,
+            live=self.cfg.live,
+            regime_score=self.regime.current.get("score"),
         )
         if not self.state.buy_stages:
             ok, why = False, "todas las etapas de compra estan apagadas en Trenches"
@@ -350,7 +358,14 @@ class Bot:
         pump: bool = False,
     ) -> None:
         wallet = await self.trader.wallet_sol()
-        ok, why = risk.can_open(cand.mint, self.state, wallet, self.cfg.risk, live=self.cfg.live)
+        ok, why = risk.can_open(
+            cand.mint,
+            self.state,
+            wallet,
+            self.cfg.risk,
+            live=self.cfg.live,
+            regime_score=self.regime.current.get("score"),
+        )
         if not ok:
             log.debug("No se compra %s: %s", snap.symbol, why)
             return
@@ -403,6 +418,7 @@ class Bot:
                 "vol_m5": snap.volume_m5,
                 "vol_h1": snap.volume_h1,
                 "dex": snap.dex_id,
+                "regime": self.regime.current.get("score"),
             },
         )
         self.state.open_position(pos)
@@ -537,6 +553,16 @@ class Bot:
             log.info("\n".join(lines))
 
     # ------------------------------------------------- datos para el panel
+
+    async def _regime_loop(self) -> None:
+        while True:
+            try:
+                if time.time() - self.regime.fetched_at > 600:
+                    await self.regime.refresh_market()
+                self.regime.update(self.radar)
+            except Exception:  # noqa: BLE001
+                log.debug("Error calculando el regimen", exc_info=True)
+            await asyncio.sleep(60)
 
     async def _sol_price_loop(self) -> None:
         while True:
