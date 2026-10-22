@@ -174,6 +174,7 @@ def build_state(bot: Bot) -> dict[str, Any]:
         "entry_mode": bot.cfg.filters.entry_mode,
         "buy_stages": bot.state.buy_stages,
         "buy_block": bot.buy_block,
+        "life": bot.life_info(),
         "last_eval_at": bot.last_eval_at,
         "mascot": _mascot_url(),
         "events": list(bot.notifier.events)[-80:][::-1],
@@ -225,11 +226,19 @@ def create_app(bot: Bot) -> web.Application:
         log.info("Etapas de compra cambiadas desde el panel: %s", stages or "ninguna")
         return web.json_response({"ok": True, "stages": stages})
 
+    async def api_revive(req: web.Request) -> web.Response:
+        if req.headers.get("X-Token") != token:
+            return web.json_response({"ok": False, "error": "no autorizado"}, status=403)
+        ok, msg = await bot.revive()
+        log.info("Revivir desde el panel: %s", msg)
+        return web.json_response({"ok": ok, "message": msg}, status=200 if ok else 400)
+
     app = web.Application()
     app.router.add_get("/", index)
     app.router.add_get("/api/state", api_state)
     app.router.add_post("/api/sell/{mint}", api_sell)
     app.router.add_post("/api/buy-stages", api_buy_stages)
+    app.router.add_post("/api/revive", api_revive)
 
     async def mascot(_req: web.Request) -> web.StreamResponse:
         path = find_mascot()

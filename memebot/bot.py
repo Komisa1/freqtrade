@@ -9,7 +9,7 @@ from collections import deque
 
 import aiohttp
 
-from . import risk
+from . import risk, survival
 from .config import Config
 from .entry import Armed, check_pullback
 from .exits import ExitAction, decide_exit
@@ -23,6 +23,7 @@ from .sources.gmgn import poll_gmgn
 from .sources.pumpportal import stream_pumpportal
 from .stages import STAGE_LABELS, classify, progress_from_mcap_sol, progress_from_vsol
 from .state import State
+from .survival import Instinct, Life
 from .trader import LiveTrader, PaperTrader
 
 log = logging.getLogger("memebot")
@@ -32,6 +33,7 @@ DUST_FRACTION = 0.01  # si queda menos del 1% de la posicion, se considera cerra
 MAX_SELL_FAILURES = 5
 MAX_RADAR = 300
 EQUITY_EVERY_SECONDS = 30
+MOOD_EVERY = 600
 
 
 class Bot:
@@ -82,16 +84,36 @@ class Bot:
         self.recent_new: deque[dict] = deque(maxlen=60)
         self.recent_migrated: deque[dict] = deque(maxlen=60)
         self.migrated_mints: set[str] = set()
+        # instinto de supervivencia: como se siente Marín ahorita (None = desactivado)
+        self.instinct: Instinct | None = None
+        self._last_mood = ""
+        self._mood_said_at = 0.0
+        self._dying_since = 0.0  # desde cuando esta debajo de la linea de muerte
+        self._liquidating = False
+        self._birth_waiting = False
+        # en real, compras y ventas una por una: cada fill se mide con el cambio de saldo de
+        # la wallet, y dos operaciones a la vez se contarian la una a la otra
+        self._trade_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------ run
 
     async def run(self) -> None:
         wallet = await self.trader.wallet_sol()
         self.last_wallet_sol = wallet
+        await self.ensure_life(wallet)
+        await self.check_life()
         who = f" wallet {self.trader.pubkey}" if isinstance(self.trader, LiveTrader) else ""
+        life = self.state.life
+        alive = ""
+        if life and self.instinct:
+            alive = (
+                f" | 💀 MUERTA (vida {life.number}): no va a comprar"
+                if life.dead
+                else f" | vida {life.number} {self.instinct.emoji} miedo {self.instinct.fear:.0%}"
+            )
         await self.notifier.send(
             f"Marín iniciada en modo {self.mode.upper()}{who} | saldo {wallet:.4f} SOL | "
-            f"{len(self.state.positions)} posiciones abiertas"
+            f"{len(self.state.positions)} posiciones abiertas{alive}"
         )
         src = self.cfg.sources
         tasks = [
@@ -138,6 +160,7 @@ class Bot:
             for t in tasks:
                 t.cancel()
             self._save()
+            self.state.heartbeat(stop=True)
 
     def _save(self) -> None:
         if isinstance(self.trader, PaperTrader):
@@ -165,6 +188,160 @@ class Bot:
             self.watchlist[mint] = cand
             log.debug("Nuevo candidato %s %s (%s)", cand.symbol, mint, cand.source)
 
+    # ------------------------------------------------------------- vida
+
+    def _revive_hint(self) -> str:
+        cmd = "python -m memebot revivir" + (" --live" if self.cfg.live else "")
+        return f"boton 'Darle otra vida' del panel, o con el bot cerrado: {cmd}"
+
+    def _life_capital(self, wallet: float) -> float:
+        # las posiciones de antes de nacer no son de esta vida: el capital es el saldo
+        sv = self.cfg.survival
+        return sv.life_capital_sol if sv.life_capital_sol > 0 else wallet
+
+    async def _birth(self, number: int, capital: float) -> None:
+        sv = self.cfg.survival
+        self.state.life = Life(number=number, born_at=time.time(), capital=capital, peak=capital)
+        self._dying_since = 0.0
+        self._last_mood = ""
+        self._save()
+        await self.notifier.send(
+            f"🐣 Marín nació (vida {number}) con {capital:.4f} SOL. Muere si pierde "
+            f"{sv.death_drawdown_pct:.0f}% desde su mejor momento: "
+            f"{capital * (1 - sv.death_drawdown_pct / 100):.4f} SOL"
+        )
+
+    async def ensure_life(self, wallet: float | None = None) -> None:
+        """Hace nacer a Marín si todavia no tiene vida (primera vez o revivida desde la consola).
+        Sin saldo para al menos una compra no nace: espera a que deposites."""
+        sv = self.cfg.survival
+        if not sv.enabled:
+            return
+        life = self.state.life
+        if life is not None and life.born:
+            return
+        if wallet is None:
+            wallet = await self.trader.wallet_sol()
+        capital = self._life_capital(wallet)
+        if capital < self.cfg.risk.trade_size_sol:
+            if not self._birth_waiting:
+                log.warning(
+                    "Marín espera para nacer: %.4f SOL no alcanza para una compra de %s SOL",
+                    capital,
+                    self.cfg.risk.trade_size_sol,
+                )
+                self._birth_waiting = True
+            return
+        self._birth_waiting = False
+        await self._birth(life.number if life is not None else 1, capital)
+
+    async def check_life(self) -> None:
+        """Recalcula el miedo; si sigue debajo de la linea de muerte `death_confirm_seconds`
+        (para que un precio raido no la mate), muere y vende todo."""
+        sv = self.cfg.survival
+        if not sv.enabled:
+            self.instinct = None
+            return
+        life = self.state.life
+        if life is None or not life.born:
+            await self.ensure_life()
+            life = self.state.life
+            if life is None or not life.born:
+                self.instinct = None
+                return
+        inst = survival.compute_instinct(life, self.state.positions.values(), sv, self.cfg.risk)
+        if survival.should_die(inst, sv):
+            now = time.time()
+            if not self._dying_since:
+                self._dying_since = now
+                if sv.death_confirm_seconds > 0:
+                    log.warning(
+                        "😱 Marín está al borde de la muerte (-%.1f%%): si sigue asi %.0f s, muere",
+                        inst.drawdown_pct,
+                        sv.death_confirm_seconds,
+                    )
+            if now - self._dying_since >= sv.death_confirm_seconds:
+                await self._die(life, inst)
+                return
+        else:
+            self._dying_since = 0.0
+        self.instinct = inst
+        # avisa cuando cambia de animo (como mucho cada 10 min, para no llenar Telegram)
+        if inst.mood != self._last_mood and time.time() - self._mood_said_at >= MOOD_EVERY:
+            if self._last_mood and not inst.dead:
+                await self.notifier.send(
+                    f"{inst.emoji} Marín está {inst.mood} (miedo {inst.fear:.0%}, "
+                    f"{inst.drawdown_pct:.1f}% abajo de su mejor momento)"
+                )
+                self._mood_said_at = time.time()
+            self._last_mood = inst.mood
+        if life.dead:
+            await self._liquidate()
+
+    async def _die(self, life: Life, inst: Instinct) -> None:
+        sv = self.cfg.survival
+        life.dead = True
+        life.died_at = time.time()
+        life.death_reason = (
+            f"perdio {inst.drawdown_pct:.1f}% desde su mejor momento "
+            f"({inst.peak:.4f} -> {inst.equity:.4f} SOL)"
+        )
+        self.instinct = survival.compute_instinct(
+            life, self.state.positions.values(), sv, self.cfg.risk
+        )
+        self._last_mood = self.instinct.mood
+        self._save()
+        log.warning("💀 Marín murió: %s", life.death_reason)
+        await self.notifier.send(
+            f"💀 Marín MURIÓ (vida {life.number}): {life.death_reason}. "
+            f"Vende lo que tenga y no vuelve a comprar. Para darle otra vida: {self._revive_hint()}"
+        )
+        await self._liquidate()
+
+    async def _liquidate(self) -> None:
+        """Al morir vende todo. Una sola vez a la vez, aunque la llamen varios ciclos."""
+        if not self.cfg.survival.sell_all_on_death or self._liquidating:
+            return
+        self._liquidating = True
+        try:
+            for pos in list(self.state.positions.values()):
+                await self.manage_position(
+                    pos,
+                    pos.last_price_usd or pos.entry_price_usd,
+                    None,
+                    force_reason="Marín murió: vende todo",
+                )
+        finally:
+            self._liquidating = False
+
+    async def revive(self) -> tuple[bool, str]:
+        """Le da otra vida (boton del panel). El historial se conserva. Si algo falla, sigue
+        muerta (nunca queda a medias)."""
+        life = self.state.life
+        if life is None or not life.dead:
+            return False, "Marín está viva, no hay nada que revivir"
+        try:
+            wallet = await self.trader.wallet_sol()
+        except Exception as e:  # noqa: BLE001
+            return False, f"no se pudo leer el saldo, sigue muerta: {e}"
+        capital = self._life_capital(wallet)
+        if capital < self.cfg.risk.trade_size_sol:
+            return False, f"con {capital:.4f} SOL no alcanza para una vida nueva: deposita SOL"
+        if self.state.life is not life:
+            return False, "ya revivió"
+        await self._birth(life.number + 1, capital)
+        await self.check_life()
+        self._update_buy_block()
+        return True, f"Marín revivió: vida {self.state.life.number}"
+
+    def life_info(self) -> dict | None:
+        life, inst = self.state.life, self.instinct
+        if life is None or inst is None:
+            return None
+        return survival.describe(inst, life, self.cfg.survival, self.cfg.risk)
+
+    # ----------------------------------------------------------- compras
+
     def _update_buy_block(self) -> None:
         """Revisa los limites globales (no los de un token puntual) para mostrar en el panel
         si el bot esta en pausa y por que."""
@@ -175,8 +352,10 @@ class Bot:
             self.cfg.risk,
             live=self.cfg.live,
             regime_score=self.regime.current.get("score"),
+            instinct=self.instinct,
+            trade_size=self._trade_size(),
         )
-        if not self.state.buy_stages:
+        if ok and not self.state.buy_stages:
             ok, why = False, "todas las etapas de compra estan apagadas en Trenches"
         block = "" if ok else why
         if block != self.buy_block:
@@ -225,7 +404,10 @@ class Bot:
         f = self.cfg.filters
         now = now or time.time()
         self.last_eval_at = now
+        await self.check_life()
         self._update_buy_block()
+        if self.instinct is not None and self.instinct.dead:
+            return  # muerta: ya no analiza monedas
         for mint, cand in list(self.watchlist.items()):
             # los tokens marcados siguen vigilados hasta que compran o expiran
             if mint not in self.armed and now - cand.first_seen > f.watch_minutes * 60:
@@ -358,14 +540,7 @@ class Bot:
         pump: bool = False,
     ) -> None:
         wallet = await self.trader.wallet_sol()
-        ok, why = risk.can_open(
-            cand.mint,
-            self.state,
-            wallet,
-            self.cfg.risk,
-            live=self.cfg.live,
-            regime_score=self.regime.current.get("score"),
-        )
+        ok, why = self._buy_allowed(cand.mint, wallet, score, pump)
         if not ok:
             log.debug("No se compra %s: %s", snap.symbol, why)
             return
@@ -381,8 +556,15 @@ class Bot:
                 self.rejected.add(cand.mint)
             return
 
-        size = self.cfg.risk.trade_size_sol
-        fill = await self.trader.buy(cand.mint, size, snap)
+        async with self._trade_lock:
+            # mientras revisaba RugCheck pudo cambiar todo (o morir): se revisa otra vez
+            wallet = await self.trader.wallet_sol()
+            ok, why = self._buy_allowed(cand.mint, wallet, score, pump)
+            if not ok:
+                log.debug("No se compra %s: %s", snap.symbol, why)
+                return
+            size = self._trade_size()
+            fill = await self.trader.buy(cand.mint, size, snap)
         self.watchlist.pop(cand.mint, None)
         self.armed.pop(cand.mint, None)
         if not fill.ok:
@@ -419,6 +601,7 @@ class Bot:
                 "vol_h1": snap.volume_h1,
                 "dex": snap.dex_id,
                 "regime": self.regime.current.get("score"),
+                "fear": None if self.instinct is None else round(100 * self.instinct.fear),
             },
         )
         self.state.open_position(pos)
@@ -461,11 +644,46 @@ class Bot:
                     self.state.record_price(mint, now, snap.price_usd)
                     liq = snap.liquidity_usd if snap.liquidity_known else None
                     await self.manage_position(pos, snap.price_usd, liq)
+            try:
+                await self.check_life()
+            except Exception:  # noqa: BLE001
+                log.exception("Error revisando la vida de Marín")
+
+    def _buy_allowed(self, mint: str, wallet: float, score: float, pump: bool) -> tuple[bool, str]:
+        if self.state.life is not None and self.state.life.dead:
+            return False, "💀 Marín murió"
+        ok, why = risk.can_open(
+            mint,
+            self.state,
+            wallet,
+            self.cfg.risk,
+            live=self.cfg.live,
+            regime_score=self.regime.current.get("score"),
+            instinct=self.instinct,
+            trade_size=self._trade_size(),
+        )
+        if not ok:
+            return ok, why
+        f = self.cfg.filters
+        # un pump tiene que pasar los dos puntajes (scoring.evaluate pide min_score siempre)
+        base = max(f.min_score, f.pump_min_score) if pump else f.min_score
+        return survival.score_gate(score, base, self.instinct)
+
+    def _trade_size(self) -> float:
+        """Tamano de la compra: con miedo, Marín apuesta menos (pero no tan poco que las
+        comisiones se coman la operacion: survival.min_trade_sol)."""
+        base = self.cfg.risk.trade_size_sol
+        if self.instinct is None:
+            return base
+        floor = min(base, self.cfg.survival.min_trade_sol)
+        return max(floor, base * self.instinct.size_mult)
 
     async def manage_position(
         self, pos: Position, price: float, liquidity: float | None, force_reason: str = ""
     ) -> None:
         if pos.mint in self._selling:  # ya hay una venta en curso para esta posicion
+            return
+        if self.state.positions.get(pos.mint) is not pos:  # ya se cerro
             return
         pos.last_price_usd = price
         pos.peak_price_usd = max(pos.peak_price_usd, price)
@@ -499,7 +717,8 @@ class Bot:
             if action.fraction_of_remaining >= 1
             else (pos.tokens_left * action.fraction_of_remaining)
         )
-        fill = await self.trader.sell(pos.mint, amount, price)
+        async with self._trade_lock:
+            fill = await self.trader.sell(pos.mint, amount, price)
         if not fill.ok:
             n = self.sell_failures.get(pos.mint, 0) + 1
             self.sell_failures[pos.mint] = n
@@ -587,6 +806,8 @@ class Bot:
                 self.last_wallet_sol = wallet
                 self.equity.append((time.time(), wallet + self.open_value_sol()))
                 self.state.append_equity(self.equity[-1])
+                self.state.heartbeat()
+                await self.check_life()
             except Exception:  # noqa: BLE001
                 log.debug("No se pudo registrar el equity", exc_info=True)
             await asyncio.sleep(EQUITY_EVERY_SECONDS)

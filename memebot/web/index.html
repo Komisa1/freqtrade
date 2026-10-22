@@ -225,6 +225,26 @@ td { padding: 10px 14px; border-top: 1px solid var(--line); white-space: nowrap;
   100% { transform: translate(var(--x), var(--y)) rotate(var(--r)); opacity: 0; } }
 .money { position: fixed; z-index: 30; pointer-events: none; font-size: 22px; animation: money-up 1.8s ease-out forwards; }
 @keyframes money-up { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-160px); opacity: 0; } }
+/* vida de Marín (instinto de supervivencia) */
+.life { padding: 14px; }
+.life-head { display: flex; align-items: center; gap: 12px; }
+.life-face { font-size: 34px; line-height: 1; }
+.life-title { flex: 1; min-width: 0; }
+.life-title h3 { font-size: 15px; }
+.life-fear { text-align: right; }
+.life-fear .v { font-size: 22px; font-weight: 800; }
+.lifebar { height: 12px; border-radius: 6px; background: var(--panel2); margin-top: 12px; overflow: hidden; }
+.lifebar-fill { height: 100%; border-radius: 6px; transition: width .6s ease, background .6s ease; }
+.life-legend { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.life .kpis { grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 900px) { .life .kpis { grid-template-columns: repeat(2, 1fr); } }
+.life.scared { border-color: rgba(240,185,11,.45); }
+.life.terror { border-color: rgba(246,70,93,.6); animation: life-pulse 1.6s ease-in-out infinite; }
+@keyframes life-pulse { 0%, 100% { box-shadow: 0 0 0 rgba(246,70,93,0); } 50% { box-shadow: 0 0 18px rgba(246,70,93,.35); } }
+.life.dead { border-color: var(--red); background: linear-gradient(180deg, rgba(246,70,93,.10), var(--panel)); }
+.life-dead { margin-top: 12px; padding: 12px; border-radius: 8px; background: var(--red-bg); }
+.life-dead p { margin: 0 0 10px; }
+.btn.revive { background: var(--accent); color: #0b0b0e; } .btn.revive:disabled { opacity: .5; cursor: wait; }
 </style>
 </head>
 <body>
@@ -305,6 +325,30 @@ td { padding: 10px 14px; border-top: 1px solid var(--line); white-space: nowrap;
         <div class="cal-grid" id="cal"></div>
       </section>
     </div>
+
+    <section class="card life" id="life-card" hidden>
+      <div class="life-head">
+        <div class="life-face" id="life-face">😌</div>
+        <div class="life-title">
+          <h3 id="life-title">Vida</h3>
+          <div class="sub" id="life-sub"></div>
+        </div>
+        <div class="life-fear"><div class="muted">Miedo</div><div class="v mono" id="life-fear">—</div></div>
+      </div>
+      <div class="lifebar" title="Cuánta vida le queda: lleno = en su mejor momento, vacío = muere">
+        <div class="lifebar-fill" id="life-fill"></div>
+      </div>
+      <div class="life-legend sub">
+        <span>💀 Muere en <b class="mono" id="life-death">—</b></span>
+        <span id="life-left"></span>
+        <span>Mejor momento <b class="mono" id="life-peak">—</b></span>
+      </div>
+      <div class="kpis" id="life-effects"></div>
+      <div class="life-dead" id="life-dead" hidden>
+        <p id="life-dead-msg"></p>
+        <button class="btn revive" id="revive-btn">Darle otra vida</button>
+      </div>
+    </section>
 
     <section class="card">
       <div class="tabs">
@@ -456,7 +500,7 @@ function render() {
   setText("winrate", S.trades_closed ? `${Math.round(100 * S.wins / S.trades_closed)}% (${S.wins}/${S.trades_closed})` : "—");
   setText("n-open", S.open.length); setText("n-closed", S.trades_closed);
 
-  renderEquity(); renderCalendar(); renderRadar(); renderTab(); renderTrenches(); crabMood();
+  renderLife(); renderEquity(); renderCalendar(); renderRadar(); renderTab(); renderTrenches(); crabMood();
   if (selected) renderDetail(false);
 }
 function setText(id, v) { document.getElementById(id).textContent = v; }
@@ -764,6 +808,52 @@ async function sellNow(mint) {
 }
 function copy(t) { navigator.clipboard?.writeText(t); toast("Copiado"); }
 
+// ---------- vida de Marín ----------
+function renderLife() {
+  const card = document.getElementById("life-card"), L = S.life;
+  card.hidden = !L;
+  if (!L) return;
+  const E = L.effects, fear = Math.round(100 * L.fear);
+  card.className = "card life" + (L.dead ? " dead" : L.fear >= 0.7 ? " terror" : L.fear >= 0.4 ? " scared" : "");
+  setText("life-face", L.emoji);
+  setText("life-title", L.dead ? `Vida ${L.number} · MUERTA` : `Vida ${L.number} · ${L.mood}`);
+  setText("life-sub", L.dead
+    ? `Vivió ${dur(L.died_at - L.born_at)} · ${L.trades} operaciones · resultado ${psol(L.pnl_sol)}`
+    : `Nació hace ${dur(S.now - L.born_at)} con ${sol(L.capital)} · ${L.trades} operaciones · resultado ${psol(L.pnl_sol)}`
+      + (L.loss_streak ? ` · ${L.loss_streak} pérdida(s) seguida(s)` : ""));
+  const fe = document.getElementById("life-fear");
+  fe.textContent = L.dead ? "—" : fear + "%";
+  fe.className = "v mono " + (L.dead ? "muted" : L.fear >= 0.7 ? "down" : L.fear >= 0.15 ? "" : "up");
+  const left = L.life_left_pct, bar = document.getElementById("life-fill");
+  bar.style.width = Math.max(0, Math.min(100, left)) + "%";
+  bar.style.background = left > 66 ? "var(--green)" : left > 33 ? "var(--yellow)" : "var(--red)";
+  setText("life-death", sol(L.death_line));
+  setText("life-peak", sol(L.peak));
+  setText("life-left", L.dead ? "" : `Le queda ${sol(Math.max(0, L.to_death_sol))} antes de morir (va -${L.drawdown_pct.toFixed(1)}% de ${L.death_drawdown_pct}%)`);
+  const k = (label, v, hint) => `<div class="kpi" title="${esc(hint)}"><div class="muted">${label}</div><div class="v mono">${v}</div></div>`;
+  document.getElementById("life-effects").innerHTML = L.dead ? "" : [
+    k("Apuesta", `${E.trade_size_sol.toFixed(3)} SOL`, `Normal: ${E.base_trade_size_sol} SOL. Con miedo apuesta menos.`),
+    k("Puntaje extra", `+${Math.round(E.score_bonus)}`, "Con miedo exige más puntaje para comprar."),
+    k("Posiciones", `${E.max_open} de ${E.base_max_open}`, "Con miedo abre menos posiciones a la vez."),
+    k("Descanso", `${Math.round(E.cooldown_minutes)} min`, "Minutos sin comprar después de una pérdida."),
+    k("Mercado", E.min_regime > 0 ? `≥ ${Math.round(E.min_regime)}` : "libre", "Con mucho miedo no compra si el mercado está en contra."),
+  ].join("");
+  document.getElementById("life-dead").hidden = !L.dead;
+  if (L.dead) setText("life-dead-msg", `💀 Marín murió: ${L.death_reason}. Vendió lo que tenía y ya no compra, aunque reinicies el bot.`);
+}
+async function revive() {
+  if (!confirm("¿Darle otra vida a Marín? Empieza de cero con lo que tenga ahorita.")) return;
+  const b = document.getElementById("revive-btn"); b.disabled = true; b.textContent = "Reviviendo…";
+  try {
+    const r = await fetch("/api/revive", {method: "POST", headers: {"X-Token": TOKEN}});
+    const j = await r.json();
+    toast(j.ok ? "🐣 " + j.message : "⚠️ " + (j.message || j.error));
+  } catch (e) { toast("⚠️ No se pudo conectar con el bot"); }
+  b.disabled = false; b.textContent = "Darle otra vida";
+  refresh();
+}
+document.getElementById("revive-btn").addEventListener("click", revive);
+
 // ---------- eventos ----------
 document.addEventListener("click", e => {
   const cp = e.target.closest("[data-copy]"); if (cp) return copy(cp.dataset.copy);
@@ -865,6 +955,11 @@ const CRAB = {
     "Perdimos {pnl} en {sym}, pero el stop nos salvó de algo peor 🛡️"],
   buy: ["¡Compramos {sym}! Crucemos las tenazas 🤞", "Entramos a {sym}, a ver qué tal 👀", "{sym} en la bolsa, ¡vamos! 🚀"],
   partial: ["¡Tomamos ganancia en {sym}! 💰", "Ya aseguramos una parte de {sym} 🔒💰"],
+  scared: [
+    "Tengo miedo ({fear})… solo compro lo más seguro 😨", "Estoy apostando menos hasta recuperarme 😬",
+    "No me quiero morir 😰 voy con cuidado", "Me quedan {left} antes de morir… cero locuras 🙏",
+  ],
+  dead: ["💀", "Me morí… dame otra vida en el panel 🥀", "Ya no compro nada. Fue bonito mientras duró 💀"],
 };
 const fill = (t, d) => t.replace(/\{(\w+)\}/g, (_, k) => d[k] ?? "");
 
@@ -1025,8 +1120,12 @@ function crabMood() {
   if (Date.now() - crabMsgAt < 20000) return;
   const best = [...S.open].sort((a, b) => b.multiple - a.multiple)[0];
   const d = {pnl: psol(pnl, 3), seen: S.stats.seen, armed: S.armed_count, best: best ? best.symbol : "", x: best ? best.multiple.toFixed(2) + "x" : ""};
+  const L = S.life;
+  if (L) { d.fear = Math.round(100 * L.fear) + "% de miedo"; d.left = psol(Math.max(0, L.to_death_sol), 3).replace("+", ""); }
   let pool = mood === "happy" ? CRAB.happy : mood === "sad" ? CRAB.sad : CRAB.idle;
+  if (L && L.fear >= 0.4 && Math.random() < 0.6) pool = CRAB.scared;
   if (S.buy_block && Math.random() < 0.5) pool = [`Ahorita no estoy comprando: ${S.buy_block} ⏸️`];
+  if (L && L.dead) pool = CRAB.dead;
   if (!best) pool = pool.filter(t => !t.includes("{best}"));
   if (!S.armed_count) pool = pool.filter(t => !t.includes("{armed}"));
   if (!pool.length) pool = CRAB.idle.filter(t => !t.includes("{armed}"));

@@ -51,6 +51,24 @@ Ajustes hechos con 85 operaciones simuladas (28% de aciertos, -18% con la v2):
 
 Aplicarla: `python -m memebot estrategia` (o `estrategia marin-v2` para volver a la anterior). En el reporte sale como **"Rebote confirmado (v3)"**.
 
+## Instinto de supervivencia: Marín le tiene miedo a morir
+
+Marín tiene **una vida**. Si pierde demasiado, **muere**: vende todo y no vuelve a comprar nunca, ni aunque reinicies el bot. Mientras más cerca está de morir, más miedo tiene, y el miedo la vuelve más cuidadosa. Funciona igual en simulación y en real.
+
+- **Nace** al arrancar el bot con su **saldo** de ese momento (en real, el de la wallet; o `survival.life_capital_sol` si lo pones). Solo cuentan las monedas que compre en esa vida: las que ya tenía abiertas de antes no le dan miedo. Si el saldo no alcanza ni para una compra, espera a que deposites para nacer.
+- **Muere** si su patrimonio cae **40 %** desde su mejor momento (`survival.death_drawdown_pct`) y sigue así **20 segundos** (`survival.death_confirm_seconds`), para que un precio raro de un instante no la mate. Su mejor momento solo sube con ganancias ya cobradas: si una moneda sube y luego regresa, eso no le da miedo; perder dinero sí.
+- **Miedo (0–100 %)**: empieza al caer 5 % desde su mejor momento y llega a 100 % en la línea de muerte. Cada pérdida seguida suma 10 % más (hasta 50 %); una ganancia borra ese susto.
+- **Lo que hace con miedo** (de forma gradual, al máximo con 100 % de miedo):
+  - apuesta menos: hasta el **30 %** del tamaño normal, pero nunca menos de **0.05 SOL** (`survival.min_trade_sol`), porque con montos más chicos las comisiones se comen la operación;
+  - pide hasta **20 puntos más** de puntaje para comprar;
+  - abre menos posiciones a la vez (con mucho miedo, solo 1);
+  - descansa hasta **4 veces más** después de perder;
+  - desde 50 % de miedo, no compra si el **mercado está en contra** (régimen menor a 45).
+- **Ánimo**: 😌 tranquila, 😬 nerviosa, 😨 asustada, 😱 aterrada y 💀 muerta. Lo ves en la tarjeta **Vida** del panel, en el reporte y en Telegram.
+- **Revivir**: solo tú puedes darle otra vida. Usa el botón **Darle otra vida** del panel, o cierra el bot y corre `python -m memebot revivir` (en real: `python -m memebot revivir --live`). En simulación puedes empezar con saldo nuevo: `python -m memebot revivir --saldo 2`. El historial de operaciones se conserva.
+
+Ojo: el miedo hace que **pierda más lento y opere menos**, pero no convierte una estrategia perdedora en ganadora. Lo que decide si gana es la estrategia; el miedo decide cuánto puede perder antes de rendirse. Si muere en simulación, es la señal para no pasarla a real así.
+
 ## Estrategia Marín v2 (entrada en retroceso), anterior
 
 En la primera simulación casi todas las pérdidas fueron stop loss justo después de comprar: el bot compraba en el pico de la vela. La v2 cambia la entrada:
@@ -117,6 +135,7 @@ Activa el entorno primero: en Windows `.\.venv\Scripts\Activate.ps1`; en Linux/m
 | `python -m memebot balance` | Saldo de la wallet del bot |
 | `python -m memebot run --live` | **Opera con dinero real** (pide confirmación) |
 | `python -m memebot report --live` | Resultados reales |
+| `python -m memebot revivir` | Darle otra vida a Marín después de morir (con el bot cerrado; en real agrega `--live`) |
 
 `Ctrl+C` detiene el bot. Las posiciones abiertas quedan guardadas en `data/` y el bot las retoma al reiniciar. Cada operación queda registrada en `data/trades_paper.csv` o `data/trades_live.csv`, y el log completo en `data/memebot.log`.
 
@@ -179,6 +198,12 @@ El bot te avisa de cada compra, venta parcial y cierre, con el PnL.
 | `execution.priority_fee_sol` | 0.0005 | Propina para que la transacción entre rápido |
 | `execution.router` | `jupiter` | `jupiter` o `pumpportal` |
 | `sources.gmgn` | false | Activar trending de GMGN (experimental) |
+| `survival.enabled` | true | Instinto de supervivencia (miedo a morir) |
+| `survival.death_drawdown_pct` | 40 | Muere si cae este % desde su mejor momento |
+| `survival.fear_start_pct` | 5 | Desde qué caída empieza a tener miedo |
+| `survival.min_size_pct` | 30 | Con miedo máximo apuesta este % del tamaño normal |
+| `survival.life_capital_sol` | 0 | Capital de cada vida (0 = su saldo al nacer) |
+| `survival.min_trade_sol` | 0.05 | Con miedo nunca apuesta menos que esto |
 
 Si quieres buscar *runners* grandes, no subas el tamaño de la posición. Cambia la escalera de salidas: por ejemplo `[[2,40],[5,20],[10,20]]` con `trailing_stop_pct` 35 deja correr más la parte que queda. Ten en cuenta que muchas de esas posiciones van a devolver la ganancia antes de llegar al siguiente escalón.
 

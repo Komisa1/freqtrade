@@ -14,6 +14,11 @@ comandos completos para copiar y pegar en PowerShell (`.\.venv\Scripts\python.ex
 - Con pocas operaciones (<30 por grupo) los resultados son ruido: dilo.
 - Nunca pidas ni leas `.env` (clave privada).
 
+- Instinto de supervivencia (`memebot/survival.py`, seccion `survival`): Marín tiene una vida,
+  el miedo la vuelve mas cuidadosa y si cae `death_drawdown_pct` desde su mejor momento muere
+  (deja de comprar para siempre hasta `python -m memebot revivir`). Si murio, primero revisa el
+  `report`: casi siempre es la estrategia, no el miedo.
+
 ## Desarrollo
 - Tests: `python -m pytest` (desde esta carpeta). Lint: `ruff check memebot tests`.
 - Las estrategias se versionan como presets en `memebot/config.py` (`STRATEGY_PRESETS`) y se

@@ -85,6 +85,22 @@
     "max_capital_sol": 0,
     "max_total_loss_sol": 0
   },
+  "survival": {
+    "enabled": true,
+    "life_capital_sol": 0,
+    "death_drawdown_pct": 40,
+    "fear_start_pct": 5,
+    "streak_fear_per_loss": 0.1,
+    "streak_fear_max": 0.5,
+    "min_size_pct": 30,
+    "fear_score_bonus": 20,
+    "fear_cooldown_mult": 4,
+    "fear_regime_from": 0.5,
+    "fear_regime_min": 45,
+    "sell_all_on_death": true,
+    "death_confirm_seconds": 20,
+    "min_trade_sol": 0.05
+  },
   "execution": {
     "router": "jupiter",
     "slippage_bps": 1500,

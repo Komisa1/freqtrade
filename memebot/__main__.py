@@ -76,8 +76,82 @@ async def _balance(cfg) -> None:
     print(f"Wallet {kp.pubkey()}: {sol:.4f} SOL")
 
 
+def _life_lines(cfg, st: State) -> list[str]:
+    from .survival import compute_instinct
+
+    life = st.life
+    if not cfg.survival.enabled:
+        return ["  Instinto de supervivencia: desactivado (survival.enabled = false)"]
+    if life is None:
+        return ["  Vida: Marín todavia no nace (nace al arrancar el bot)"]
+    if not life.born:
+        return [f"  Vida {life.number}: revivida, nace al arrancar el bot"]
+    inst = compute_instinct(life, st.positions.values(), cfg.survival, cfg.risk)
+    if life.dead:
+        return [f"  💀 Vida {life.number}: MUERTA. {life.death_reason}"]
+    return [
+        f"  Vida {life.number}: {inst.emoji} {inst.mood}, miedo {inst.fear:.0%}"
+        f" | patrimonio {inst.equity:.4f} SOL (mejor {inst.peak:.4f})"
+        f" | muere en {inst.death_line:.4f} SOL",
+        f"    Con este miedo: apuesta {cfg.risk.trade_size_sol * inst.size_mult:.4f} SOL,"
+        f" pide +{inst.score_bonus:.0f} de puntaje, maximo {inst.max_open} posicion(es)",
+    ]
+
+
+def _bot_running(cfg, mode: str) -> bool:
+    import socket
+
+    if State(cfg.data_dir, mode).bot_running():
+        return True
+    if not cfg.dashboard.enabled:
+        return False
+    try:
+        with socket.create_connection(("127.0.0.1", cfg.dashboard.port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def _revive(cfg, mode: str, saldo: float | None) -> None:
+    from .survival import Life
+
+    if saldo is not None and saldo <= 0:
+        print("❌ --saldo tiene que ser mayor que 0.")
+        return
+    if _bot_running(cfg, mode):
+        print(
+            "⚠️  Marín está corriendo. Usa el boton 'Darle otra vida' del panel, o cierra el "
+            "bot y vuelve a correr este comando."
+        )
+        return
+    st = State(cfg.data_dir, mode)
+    life = st.life
+    if life is None or not life.born:
+        print(f"Marín todavia no nace en modo {mode}: nace sola al arrancar el bot.")
+        return
+    if not life.dead:
+        print(f"Marín está viva (vida {life.number}), no hay nada que revivir.")
+        return
+    print(f"💀 Vida {life.number}: {life.death_reason}")
+    if saldo is not None:
+        if mode != "paper":
+            print("❌ --saldo solo funciona en simulacion (en real el saldo es el de tu wallet).")
+            return
+        print(f"   El saldo simulado pasa de {st.paper_balance or 0:.4f} a {saldo:.4f} SOL.")
+    if input(f"¿Darle la vida {life.number + 1}? Escribe SI: ").strip().upper() != "SI":
+        print("Cancelado, sigue muerta.")
+        return
+    st.life = Life(number=life.number + 1)
+    if saldo is not None:
+        st.paper_balance = saldo
+    st.save()
+    print(f"✅ Marín revivió: vida {life.number + 1}. Nace al arrancar el bot (start.bat).")
+
+
 def _report(cfg, mode: str) -> None:
     st = State(cfg.data_dir, mode)
+    for line in _life_lines(cfg, st):
+        print(line)
     closed = st.closed
     if not closed and not st.positions:
         print(f"Sin operaciones en modo {mode} todavia.")
@@ -184,6 +258,9 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("preflight", help="revisar que todo este listo para real (sin operar)")
     rep = sub.add_parser("report", help="resumen de resultados")
     rep.add_argument("--live", action="store_true", help="ver resultados del modo live")
+    rev = sub.add_parser("revivir", help="darle otra vida a Marín despues de morir")
+    rev.add_argument("--live", action="store_true", help="revivir la del modo real")
+    rev.add_argument("--saldo", type=float, help="(simulacion) empezar con este saldo en SOL")
     args = ap.parse_args(argv)
     for stream in (sys.stdout, sys.stderr):  # consola de Windows: permitir emojis/acentos
         try:
@@ -336,6 +413,8 @@ def main(argv: list[str] | None = None) -> None:
             )
     elif args.cmd == "report":
         _report(cfg, "live" if args.live else "paper")
+    elif args.cmd == "revivir":
+        _revive(cfg, "live" if args.live else "paper", args.saldo)
 
 
 if __name__ == "__main__":

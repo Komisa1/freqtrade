@@ -108,6 +108,27 @@ class RiskConfig:
 
 
 @dataclass
+class SurvivalConfig:
+    """Instinto de supervivencia (ver memebot/survival.py). Aplica en simulacion y en real."""
+
+    enabled: bool = True
+    life_capital_sol: float = 0  # capital de cada vida (0 = lo que tenga al nacer)
+    death_drawdown_pct: float = 40  # muere si cae 40% desde su mejor momento
+    fear_start_pct: float = 5  # empieza a tener miedo al caer 5% desde su mejor momento
+    streak_fear_per_loss: float = 0.1  # cada perdida seguida suma 10% de miedo...
+    streak_fear_max: float = 0.5  # ...hasta 50% (una ganancia lo borra)
+    min_size_pct: float = 30  # con miedo maximo apuesta el 30% del tamano normal
+    fear_score_bonus: float = 20  # con miedo maximo pide 20 puntos mas de puntaje
+    fear_cooldown_mult: float = 4  # con miedo maximo descansa 4 veces mas tras perder
+    fear_regime_from: float = 0.5  # desde 50% de miedo no compra si el mercado esta en contra
+    fear_regime_min: float = 45
+    sell_all_on_death: bool = True  # al morir vende todo lo que tenga abierto
+    # tiene que seguir debajo de la linea de muerte este tiempo (un precio raro no la mata)
+    death_confirm_seconds: float = 20
+    min_trade_sol: float = 0.05  # con miedo nunca apuesta menos que esto (por las comisiones)
+
+
+@dataclass
 class ExecutionConfig:
     router: str = "jupiter"  # "jupiter" o "pumpportal"
     slippage_bps: int = 1500  # 15%: las meme coins se mueven rapido
@@ -137,6 +158,7 @@ class Config:
     filters: FilterConfig = field(default_factory=FilterConfig)
     exits: ExitConfig = field(default_factory=ExitConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
+    survival: SurvivalConfig = field(default_factory=SurvivalConfig)
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
     dashboard: DashboardConfig = field(default_factory=DashboardConfig)
     # secretos (vienen del entorno / .env, nunca de config.json)
@@ -157,6 +179,7 @@ _SECTIONS = {
     "filters": FilterConfig,
     "exits": ExitConfig,
     "risk": RiskConfig,
+    "survival": SurvivalConfig,
     "execution": ExecutionConfig,
     "dashboard": DashboardConfig,
 }
@@ -238,6 +261,17 @@ def validate(cfg: Config) -> None:
         errors.append(
             "filters: se necesita 0 < pump_pullback_min_pct < pump_pullback_max_pct < 100"
         )
+    sv = cfg.survival
+    if not 0 <= sv.fear_start_pct < sv.death_drawdown_pct < 100:
+        errors.append("survival: se necesita 0 <= fear_start_pct < death_drawdown_pct < 100")
+    if not 0 < sv.min_size_pct <= 100:
+        errors.append("survival.min_size_pct debe estar entre 0 y 100")
+    if not 0 <= sv.streak_fear_max < 1 or sv.streak_fear_per_loss < 0:
+        errors.append("survival: streak_fear_max debe estar entre 0 y 1 (sin llegar a 1)")
+    if sv.death_confirm_seconds < 0 or sv.min_trade_sol < 0:
+        errors.append("survival: death_confirm_seconds y min_trade_sol deben ser >= 0")
+    if sv.fear_cooldown_mult < 1 or sv.fear_score_bonus < 0 or sv.life_capital_sol < 0:
+        errors.append("survival: fear_cooldown_mult >= 1, fear_score_bonus y life_capital_sol >= 0")
     if cfg.live and not cfg.private_key:
         errors.append("Modo live requiere SOLANA_PRIVATE_KEY en el archivo .env")
     if errors:

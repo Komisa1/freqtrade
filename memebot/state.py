@@ -6,11 +6,12 @@ import csv
 import json
 import os
 import time
-from dataclasses import asdict
+from dataclasses import asdict, fields
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .models import Position
+from .survival import Life, record_close
 
 
 def _day(ts: float) -> str:
@@ -21,6 +22,7 @@ def _day(ts: float) -> str:
 class State:
     def __init__(self, data_dir: str | Path, mode: str):
         self.dir = Path(data_dir)
+        self.mode = mode
         self.dir.mkdir(parents=True, exist_ok=True)
         self.path = self.dir / f"state_{mode}.json"
         self.trades_path = self.dir / f"trades_{mode}.csv"
@@ -33,6 +35,8 @@ class State:
         self.paper_balance: float | None = None
         # etapas en las que el bot tiene permitido comprar (se cambia desde el panel)
         self.buy_stages: list[str] = ["new", "about", "migrated"]
+        # vida actual de Marín (instinto de supervivencia); None = todavia no nace
+        self.life: Life | None = None
         self._load()
 
     def _load(self) -> None:
@@ -45,6 +49,9 @@ class State:
         self.last_loss_time = data.get("last_loss_time", 0.0)
         self.paper_balance = data.get("paper_balance")
         self.buy_stages = data.get("buy_stages", self.buy_stages)
+        if data.get("life"):
+            known = {f.name for f in fields(Life)}
+            self.life = Life(**{k: v for k, v in data["life"].items() if k in known})
 
     def save(self) -> None:
         data = {
@@ -54,10 +61,28 @@ class State:
             "last_loss_time": self.last_loss_time,
             "paper_balance": self.paper_balance,
             "buy_stages": self.buy_stages,
+            "life": asdict(self.life) if self.life else None,
         }
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
         os.replace(tmp, self.path)
+
+    @property
+    def heartbeat_path(self) -> Path:
+        return self.dir / f"running_{self.mode}"
+
+    def heartbeat(self, stop: bool = False) -> None:
+        """Marca que el bot esta corriendo (para que `revivir` no choque con el)."""
+        if stop:
+            self.heartbeat_path.unlink(missing_ok=True)
+        else:
+            self.heartbeat_path.write_text(f"{time.time():.0f}", encoding="utf-8")
+
+    def bot_running(self, max_age: float = 120) -> bool:
+        try:
+            return time.time() - self.heartbeat_path.stat().st_mtime < max_age
+        except OSError:
+            return False
 
     def open_position(self, pos: Position) -> None:
         self.positions[pos.mint] = pos
@@ -72,6 +97,7 @@ class State:
         self.closed.append(pos)
         if pos.realized_pnl_sol < 0:
             self.last_loss_time = pos.close_time
+        record_close(self.life, pos)
         self.save()
 
     def realized_pnl_today(self, now: float | None = None) -> float:
